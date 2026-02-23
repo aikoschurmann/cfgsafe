@@ -3,3 +3,4 @@ out.txt
 *.o
 .vscode/
 test_README.md
+cfg-gen
