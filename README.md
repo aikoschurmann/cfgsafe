@@ -67,8 +67,8 @@ int main(void) {
         return 1;
     }
 
-    printf("Server running on %s:%d\n", cfg.host, cfg.port);
-    if (cfg.debug) printf("Debug mode enabled\n");
+    printf("Server running on port %d\n", cfg.port);
+    if (cfg.log_level == LOG_LEVEL_DEBUG) printf("Debug mode enabled\n");
 }
 ```
 
