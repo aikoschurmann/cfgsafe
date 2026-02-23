@@ -1,10 +1,17 @@
+NAME    := cfg-gen
 CC      := gcc
 CFLAGS  := -Wall -Iinclude
 SRC_DIR := src
-BIN     := cfg-gen
+OUT_DIR := out
 
-all:
-	$(CC) $(CFLAGS) $(SRC_DIR)/*.c -o $(BIN)
+SRCS    := $(shell find $(SRC_DIR) -name '*.c')
+BIN     := $(OUT_DIR)/$(NAME)
+
+all: $(BIN)
+
+$(BIN): $(SRCS)
+	@mkdir -p $(OUT_DIR)
+	$(CC) $(CFLAGS) $(SRCS) -o $(BIN)
 
 clean:
-	rm -f $(BIN)
+	rm -rf $(OUT_DIR)
