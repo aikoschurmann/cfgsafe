@@ -1,7 +1,7 @@
 # cfgsafe — Safe, validated C configuration
 
 ### This is only an idea for now
-**cfgsafe** is a small C library + code generator that turns a programmer‑defined C schema into a validated, typed `struct` your program can use with zero runtime failure paths. The generator reads schema file you write in a schema file, produces `*.h`/`*.c` with defaults + validation + parsing glue, and your program simply calls a generated `load` function at startup.
+**cfgsafe** is a small C library + code generator that turns a programmer‑defined schema into a validated, typed `struct` your program can use with zero runtime failure paths. The generator reads schema file you write in a schema file, produces `*.h`/`*.c` with defaults + validation + parsing glue, and your program simply calls a generated `load` function at startup.
 
 ---
 
