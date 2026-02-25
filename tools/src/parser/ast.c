@@ -47,6 +47,9 @@ void print_ast_recursive(AstNode *node, int depth, bool is_last, DenseInterner *
     }
 
     printf(COLOR_BOLD COLOR_MAGENTA "%s" COLOR_RESET, node_type_to_string(node->node_type));
+    printf(COLOR_GRAY " [%zu:%zu-%zu:%zu]" COLOR_RESET, 
+           node->span.start_line, node->span.start_col, 
+           node->span.end_line, node->span.end_col);
     
     switch (node->node_type) {
         case AST_PROGRAM:
