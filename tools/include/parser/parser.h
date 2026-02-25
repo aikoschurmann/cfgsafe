@@ -15,13 +15,13 @@ typedef struct {
 } Parser;
 
 
-typedef struct {
-    char     *message;  /* pointer to error in arena */
-    Token    *token;    /* token that caused the error (NULL if not applicable) */
-    Parser   *p;        /* parser where error occurred */
-    int      use_prev_token; /* if set, use token before 'token' for error location */
-} ParseError;
-
+typedef struct ParseError ParseError;
+struct ParseError {
+    char       *message;  /* pointer to error in arena, NULL if no error */
+    Token       token;    /* copy of the token that caused the error */
+    Parser     *p;        /* parser where error occurred */
+    int         use_prev_token; /* if set, use token before 'token' for error location */
+};
 
 
 /* Create parser allocated inside the given arena; the arena owns the parser and filename. */

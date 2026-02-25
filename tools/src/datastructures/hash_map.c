@@ -50,8 +50,11 @@ void hashmap_destroy(
         }
         dynarray_free(bucket);
     }
-    free(map->buckets);
-    free(map);
+    
+    Allocator alloc = map->alloc;
+    size_t bc = map->bucket_count;
+    allocator_free(alloc, map->buckets, bc * sizeof(DynArray));
+    allocator_free(alloc, map, sizeof(HashMap));
 }
 
 /* Helper: rehash into a newly allocated buckets array */
@@ -91,7 +94,7 @@ bool hashmap_rehash(
                 for (size_t k = 0; k < new_bucket_count; k++) {
                     dynarray_free(&new_buckets[k]);
                 }
-                free(new_buckets);
+                allocator_free(map->alloc, new_buckets, new_bucket_count * sizeof(DynArray));
                 return false; // OOM
             }
         }

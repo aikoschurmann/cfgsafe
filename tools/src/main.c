@@ -2,7 +2,10 @@
 #include <stdlib.h>
 
 #include "lexer/lexer.h"
+#include "parser/parser.h"
+#include "parser/parse_statements.h"
 #include "datastructures/arena.h"
+#include "file.h"
 
 int main(int argc, char const *argv[]) {
     if (argc < 2) {
@@ -11,51 +14,40 @@ int main(int argc, char const *argv[]) {
     }
 
     const char *filename = argv[1];
-    FILE *f = fopen(filename, "rb");
+    char *source = read_file(filename);
     
-    if (!f) {
-        fprintf(stderr, "Error: Could not open schema file at %s\n", filename);
-        return 1;
-    }
-
-    fseek(f, 0, SEEK_END);
-    long fsize = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    char *source = malloc(fsize + 1);
     if (!source) {
-        fprintf(stderr, "Error: Memory allocation failed for source buffer\n");
-        fclose(f);
         return 1;
     }
-    
-    fread(source, 1, fsize, f);
-    fclose(f);
-    source[fsize] = '\0';
 
-
-    Arena *lex_arena = arena_create(4096); 
-    Lexer *lexer = lexer_create(source, fsize, lex_arena);
-
-    printf("--- Lexing: %s ---\n", filename);
+    Arena *arena = arena_create(1024 * 1024); 
+    Lexer *lexer = lexer_create(source, strlen(source), arena);
 
     if (!lexer_lex_all(lexer)) {
-        fprintf(stderr, "Lexing failed during processing!\n");
-        free(source);
-        arena_destroy(lex_arena);
+        fprintf(stderr, "Lexing failed!\n");
+        free_file_content(source);
+        arena_destroy(arena);
         return 1;
     }
 
-    size_t token_count = 0;
-    Token *tokens = lexer_get_tokens(lexer, &token_count);
+    Parser *parser = parser_create(lexer->tokens, (char*)filename, arena);
+    ParseError err = {0};
+    
+    AstNode *program = parse_program(parser, &err);
 
-    for (size_t i = 0; i < token_count; i++) {
-        print_token(&tokens[i]); 
+    if (err.message) {
+        print_parse_error(&err);
+        free_file_content(source);
+        arena_destroy(arena);
+        return 1;
     }
 
+    printf("--- AST for %s ---\n", filename);
+    print_ast(program, 0, lexer->keywords, lexer->identifiers, lexer->strings);
+
     lexer_destroy(lexer);
-    arena_destroy(lex_arena);
-    free(source);
+    arena_destroy(arena);
+    free_file_content(source);
 
     return 0;
 }

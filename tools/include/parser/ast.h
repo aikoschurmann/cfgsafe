@@ -8,64 +8,32 @@
 
 /* ----------------------- Forward Declarations ----------------------- */
 typedef struct AstNode AstNode;
-typedef struct Type Type; /* Moved up to fix "unknown type name" error */
 
 /* ----------------------- AST node kinds ----------------------- */
 
 typedef enum {
     AST_PROGRAM,
-
-    /* declarations */
-    AST_VARIABLE_DECLARATION,
-    AST_FUNCTION_DECLARATION,
-    AST_PARAM,
-
-    /* statements */
-    AST_BLOCK,
-    AST_IF_STATEMENT,
-    AST_WHILE_STATEMENT,
-    AST_FOR_STATEMENT,
-    AST_RETURN_STATEMENT,
-    AST_BREAK_STATEMENT,
-    AST_CONTINUE_STATEMENT,
-    AST_EXPR_STATEMENT,
-
-    /* expressions */
-    AST_LITERAL,
-    AST_IDENTIFIER,
-    AST_BINARY_EXPR,
-    AST_UNARY_EXPR,
-    AST_POSTFIX_EXPR,
-    AST_ASSIGNMENT_EXPR,
-    AST_CALL_EXPR,
-    AST_SUBSCRIPT_EXPR,
+    AST_IMPORT_DECL,
+    AST_SCHEMA_DECL,
+    AST_SECTION_DECL,
+    AST_FIELD_DECL,
+    AST_PROPERTY_DECL,
     
-    AST_CAST, /* Explicit cast node (inserted by semantic analysis) */
-
-    /* types */
+    AST_LITERAL,
+    AST_RANGE_EXPR,
+    AST_CONDITION,
+    
     AST_TYPE,
-
-    AST_INITIALIZER_LIST
-
+    AST_ENUM_TYPE
 } AstNodeType;
-
-typedef enum {
-    OP_NULL,
-    OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_MOD,
-    OP_EQ, OP_NEQ, OP_LT, OP_GT, OP_LE, OP_GE,
-    OP_AND, OP_OR, OP_NOT,
-    OP_ASSIGN, OP_PLUS_EQ, OP_MINUS_EQ, OP_MUL_EQ, OP_DIV_EQ, OP_MOD_EQ,
-    OP_DEREF, OP_ADRESS,
-    OP_POST_INC, OP_POST_DEC, OP_PRE_INC, OP_PRE_DEC
-} OpKind;
 
 typedef enum {
     INT_LITERAL,
     FLOAT_LITERAL,
     BOOL_LITERAL,
     STRING_LITERAL,
-    CHAR_LITERAL,
-    LIT_UNKNOWN /* used for error handling, not a real literal type */
+    IDENTIFIER_LITERAL, /* for enum members or unquoted strings */
+    LIT_UNKNOWN
 } LiteralType;
 
 typedef struct {
@@ -73,165 +41,95 @@ typedef struct {
     union {
         long long       int_val;
         double          float_val;
-        int             bool_val;   /* 0 or 1 */
-        char            char_val;
-        InternResult   *string_val; /* interned string */
+        int             bool_val;
+        InternResult   *string_val;
     } value;
 } ConstValue;
-
 
 /* ----------------------- AST payload structs ----------------------- */
 
 typedef struct {
-    DynArray *decls; /* contains AstNode* (declarations) */
+    DynArray *imports; /* AstNode* (AST_IMPORT_DECL) */
+    DynArray *schemas; /* AstNode* (AST_SCHEMA_DECL) */
 } AstProgram;
 
 typedef struct {
-    AstNode *type;           /* type node */
-    InternResult *intern_result;  /* interned record for the variable name */
-    int is_const;            /* boolean: 0 or 1 */
-    AstNode *initializer;    /* optional */
-} AstVariableDeclaration;
+    InternResult *path; /* STRING_LIT */
+} AstImportDecl;
 
 typedef struct {
-    AstNode *return_type;    /* AstNode of AST_TYPE */
-    InternResult *intern_result;  /* interned record for the function name */
-    DynArray *params;        /* AstParam nodes */
-    AstNode *body;           /* AstBlock */
-} AstFunctionDeclaration;
+    InternResult *name;
+    DynArray *items; /* AstNode* (AST_SECTION_DECL or AST_FIELD_DECL) */
+} AstSchemaDecl;
 
 typedef struct {
-    int name_idx;            /* interned dense index for the parameter name; -1 for anonymous */
-    AstNode *type;           /* AST_TYPE node */
-} AstParam;
+    InternResult *name;
+    DynArray *items; /* AstNode* (AST_SECTION_DECL or AST_FIELD_DECL) */
+} AstSectionDecl;
 
 typedef struct {
-    DynArray *statements; /* contains AstNode* */
-} AstBlock;
+    InternResult *name;
+    AstNode *type;   /* AST_TYPE */
+    DynArray *properties; /* AstNode* (AST_PROPERTY_DECL) */
+} AstFieldDecl;
 
 typedef struct {
-    AstNode *condition;
-    AstNode *then_branch;
-    AstNode *else_branch; /* may be NULL */
-} AstIfStatement;
+    InternResult *name;
+    AstNode *value; /* AST_LITERAL, AST_RANGE_EXPR, or AST_CONDITION */
+} AstPropertyDecl;
 
 typedef struct {
-    AstNode *condition;
-    AstNode *body;
-} AstWhileStatement;
+    AstNode *min; /* AST_LITERAL */
+    AstNode *max; /* AST_LITERAL */
+} AstRangeExpr;
 
 typedef struct {
-    AstNode *init;       /* may be NULL */
-    AstNode *condition;  /* may be NULL */
-    AstNode *post;       /* may be NULL */
-    AstNode *body;
-} AstForStatement;
-
-typedef struct {
-    AstNode *expression;
-} AstReturnStatement;
-
-typedef struct { } AstBreakStatement;
-typedef struct { } AstContinueStatement;
-
-typedef struct {
-    AstNode *expression;
-} AstExprStatement;
-
-/* small expression structs */
-typedef ConstValue AstLiteral;
-typedef struct { InternResult *intern_result; } AstIdentifier; /* interned name index */
-typedef struct { AstNode *left; AstNode *right; OpKind op; } AstBinaryExpr;
-typedef struct { OpKind op; AstNode *expr; } AstUnaryExpr;
-typedef struct { AstNode *expr; OpKind op; } AstPostfixExpr;
-typedef struct { AstNode *lvalue; AstNode *rvalue; OpKind op; } AstAssignmentExpr;
-typedef struct { AstNode *callee; DynArray *args; } AstCallExpr;
-typedef struct { AstNode *target; AstNode *index; } AstSubscriptExpr;
-
-/* New Cast Struct */
-typedef struct {
-    AstNode *expr;
-    Type *target_type;
-} AstCastExpr;
-
+    InternResult *left; /* IDENTIFIER */
+    AstNode *right;      /* AST_LITERAL */
+} AstCondition;
 
 typedef enum {
-    AST_TYPE_PRIMITIVE,   // primitive type: i32, foo, etc. (holds interned id)
-    AST_TYPE_PTR,    // pointer to inner type
-    AST_TYPE_ARRAY,  // array of inner type with optional size expression
-    AST_TYPE_FUNC    // function type: params list + return type
+    AST_TYPE_PRIMITIVE,
+    AST_TYPE_ARRAY,
+    AST_TYPE_ENUM
 } AstTypeKind;
 
-typedef struct AstType {
+typedef struct {
     AstTypeKind kind;
-    Span span;               /* source range for this type expression */
-
     union {
-        /* AST_TYPE_NAME */
-        struct { InternResult *intern_result; } base;  // record from interner for the type name
-
-        /* AST_TYPE_PTR */
-        struct { AstNode *target; } ptr;
-
-        /* AST_TYPE_ARRAY */
-        struct { AstNode *elem; AstNode *size_expr; /* may be NULL for [] */ } array;
-
-        /* AST_TYPE_FUNC */
-        struct { DynArray *param_types; AstNode *return_type; } func;
+        struct { InternResult *name; } primitive;
+        struct { AstNode *elem; } array;
+        struct { AstNode *enum_decl; } enum_type;
     } u;
 } AstType;
 
-
 typedef struct {
-    DynArray *elements; /* contains AstNode* */
-} AstInitializeList;
-
+    DynArray *members; /* InternResult* */
+} AstEnumType;
 
 /* ----------------------- AstNode ----------------------- */
 struct AstNode {
     AstNodeType node_type;
     Span span;
-    Type *type;  // semantic type information
-
-    /* constant folding / evaluation helper: inline value to avoid small allocations */
-    int is_const_expr;       /* boolean: 0 or 1 */
-    ConstValue const_value;  /* can still be used for non-const expressions, constant folding will set this */
-
+    
     union {
         AstProgram program;
-        AstVariableDeclaration variable_declaration;
-        AstFunctionDeclaration function_declaration;
-        AstParam param;
-        AstBlock block;
-        AstIfStatement if_statement;
-        AstWhileStatement while_statement;
-        AstForStatement for_statement;
-        AstReturnStatement return_statement;
-        AstBreakStatement break_statement;
-        AstContinueStatement continue_statement;
-        AstExprStatement expr_statement;
-
-        AstLiteral literal;
-        AstIdentifier identifier;
-        AstBinaryExpr binary_expr;
-        AstUnaryExpr unary_expr;
-        AstPostfixExpr postfix_expr;
-        AstAssignmentExpr assignment_expr;
-        AstCallExpr call_expr;
-        AstSubscriptExpr subscript_expr;
-        AstCastExpr cast_expr;
-
+        AstImportDecl import_decl;
+        AstSchemaDecl schema_decl;
+        AstSectionDecl section_decl;
+        AstFieldDecl field_decl;
+        AstPropertyDecl property_decl;
+        
+        ConstValue literal;
+        AstRangeExpr range_expr;
+        AstCondition condition;
+        
         AstType ast_type;
-        AstInitializeList initializer_list;
+        AstEnumType enum_type;
     } data;
 };
 
-
 /* ----------------------- Helpers & prototypes ----------------------- */
 
-/* AST helper prototypes (implementations are up to you) */
 AstNode *ast_create_node(AstNodeType type, Arena *arena);
-void print_ast(AstNode *node, int depth, DenseArenaInterner *keywords, DenseArenaInterner *identifiers, DenseArenaInterner *strings);
-void print_ast_with_prefix(AstNode *node, int depth, int is_last, DenseArenaInterner *keywords, DenseArenaInterner *identifiers, DenseArenaInterner *strings);
-int is_lvalue_node(AstNode *node);
-int is_assignment_op(TokenType type);
+void print_ast(AstNode *node, int depth, DenseInterner *keywords, DenseInterner *identifiers, DenseInterner *strings);

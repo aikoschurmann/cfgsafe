@@ -15,6 +15,7 @@ static const struct {
     {"import",  TOKEN_KW_IMPORT},
     {"schema",  TOKEN_KW_SCHEMA},
     {"section", TOKEN_KW_SECTION},
+    {"enum",    TOKEN_KW_ENUM},
     {"true",    TOKEN_KW_TRUE},
     {"false",   TOKEN_KW_FALSE},
     {NULL,      TOKEN_UNKNOWN}
@@ -193,7 +194,8 @@ Token lexer_next_token(Lexer *lexer) {
     if (is_alpha(c)) {
         while (is_alpha(lexer_peek(lexer)) || is_digit(lexer_peek(lexer))) lexer_advance(lexer);
         rec = lexer_lex_identifier(lexer, start_ptr, lexer->cur, &type);
-    } else if (is_digit(c)) {
+    } else if (is_digit(c) || (c == '-' && is_digit(lexer_peek(lexer)))) {
+        // Number literal (potentially negative)
         while (is_digit(lexer_peek(lexer))) lexer_advance(lexer);
         if (lexer_peek(lexer) == '.' && is_digit(*(lexer->cur + 1))) {
             lexer_advance(lexer); /* . */
@@ -220,8 +222,16 @@ Token lexer_next_token(Lexer *lexer) {
             case ']': type = TOKEN_RBRACKET; break;
             case '(': type = TOKEN_LPAREN;   break;
             case ')': type = TOKEN_RPAREN;   break;
+            case '<': type = TOKEN_LT;       break;
+            case '>': type = TOKEN_GT;       break;
             case ':': type = TOKEN_COLON;    break;
             case ',': type = TOKEN_COMMA;    break;
+            case '=':
+                if (lexer_peek(lexer) == '=') {
+                    lexer_advance(lexer);
+                    type = TOKEN_EQ_EQ;
+                }
+                break;
             case '.':
                 if (lexer_peek(lexer) == '.') {
                     lexer_advance(lexer);
@@ -281,6 +291,7 @@ const char* token_type_to_string(TokenType type) {
         case TOKEN_KW_IMPORT:  return "IMPORT";
         case TOKEN_KW_SCHEMA:  return "SCHEMA";
         case TOKEN_KW_SECTION: return "SECTION";
+        case TOKEN_KW_ENUM:    return "ENUM";
         case TOKEN_KW_TRUE:    return "TRUE";
         case TOKEN_KW_FALSE:   return "FALSE";
         case TOKEN_LBRACE:     return "LBRACE '{'";
@@ -289,9 +300,12 @@ const char* token_type_to_string(TokenType type) {
         case TOKEN_RBRACKET:   return "RBRACKET ']'";
         case TOKEN_LPAREN:     return "LPAREN '('";
         case TOKEN_RPAREN:     return "RPAREN ')'";
+        case TOKEN_LT:         return "LT '<'";
+        case TOKEN_GT:         return "GT '>'";
         case TOKEN_COLON:      return "COLON";
         case TOKEN_COMMA:      return "COMMA";
         case TOKEN_DOT:        return "DOT";
+        case TOKEN_EQ_EQ:      return "EQ_EQ '=='";
         case TOKEN_RANGE:      return "RANGE '..'";
         case TOKEN_EOF:        return "EOF";
         default:               return "UNKNOWN";

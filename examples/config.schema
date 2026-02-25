@@ -1,32 +1,32 @@
 import "validators.h"
 
-schema AppConfig {
+schema ServerConfig {
     port: int {
         default: 8080
-        range: 1..65535
-        validate: validators.port_check
+        env: "SERVER_PORT" 
+        range: -1024..65535
     }
 
-    threshold: float {
-        default: 0.5
-        range: 0.0..1.0
-        validate: test
+    bind_address: ipv4 {
+        default: "0.0.0.0"
     }
-    
-    log_level: enum(debug, info, warn, error) { 
-        default: info
+
+    enable_tls: bool { 
+        default: false 
     }
-    
-    cert_path: path { 
-        required: true
-        exists: true 
+
+    cert_path: path {
+        required_if: enable_tls == true
+        exists: true
     }
-    
+
     section database {
+        host: string { default: "localhost" }
         user: string { required: true }
         
-        backup_nodes: [string] {
+        backup_nodes : string[] {
             min_length: 1
         }
     }
 }
+

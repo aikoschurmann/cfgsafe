@@ -1,0 +1,34 @@
+<Program>            ::= { <ImportDecl> } { <SchemaDecl> }
+
+<ImportDecl>         ::= "import" STRING_LIT
+
+<SchemaDecl>         ::= "schema" IDENTIFIER "{" { <BlockItem> } "}"
+
+<BlockItem>          ::= <SectionDecl> | <FieldDecl>
+
+<SectionDecl>        ::= "section" IDENTIFIER "{" { <BlockItem> } "}"
+
+<FieldDecl>          ::= IDENTIFIER ":" <TypeExpr> <PropertyBlock> 
+
+<PropertyBlock>      ::= "{" { <PropertyDecl> } "}"
+
+<PropertyDecl>       ::= IDENTIFIER ":" <PropertyValue>
+
+<TypeExpr>           ::= <TypeAtom> [ "[" "]" ]
+
+<TypeAtom>           ::= IDENTIFIER 
+                       | <EnumType>
+
+<EnumType>           ::= "enum" "(" <EnumMembers> ")"
+
+<EnumMembers>        ::= IDENTIFIER { "," IDENTIFIER }
+
+<PropertyValue>      ::= <Literal>
+                       | <RangeExpr>
+                       | <Condition>
+
+<Condition>          ::= IDENTIFIER "==" <Literal>
+
+<Literal>            ::= STRING_LIT | INT_LIT | FLOAT_LIT | "true" | "false" | IDENTIFIER
+
+<RangeExpr>          ::= (INT_LIT | FLOAT_LIT) ".." (INT_LIT | FLOAT_LIT)

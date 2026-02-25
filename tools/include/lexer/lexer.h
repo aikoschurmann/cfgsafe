@@ -23,6 +23,7 @@ typedef enum {
     TOKEN_KW_IMPORT,   // import
     TOKEN_KW_SCHEMA,   // schema
     TOKEN_KW_SECTION,  // section
+    TOKEN_KW_ENUM,     // enum
     TOKEN_KW_TRUE,     // true
     TOKEN_KW_FALSE,    // false
 
@@ -34,9 +35,12 @@ typedef enum {
     TOKEN_RPAREN,      // )
     TOKEN_COLON,       // :
     TOKEN_COMMA,       // ,
-    TOKEN_DOT,         // . (used in validators.port_check)
+    TOKEN_LT,          // <
+    TOKEN_GT,          // >
+    TOKEN_DOT,         // . 
+    TOKEN_EQ_EQ,       // ==
 
-    TOKEN_RANGE,       // .. (used in 1..65535)
+    TOKEN_RANGE,       // .. 
 
     TOKEN_EOF,         // End of File
     TOKEN_UNKNOWN      // For unrecognized characters

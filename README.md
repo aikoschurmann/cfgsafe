@@ -10,33 +10,48 @@
 ### `config.schema` (what you write)
 
 ```scala
-import "validators.h" // to include this file in the generated one so port_check etc work 
+import "validators.h"
 
-schema AppConfig {
+schema ServerConfig {
+    // Environment Variable Override & Defaults
     port: int {
         default: 8080
-        range: 1..65535
-        validate: validators.port_check
+        env: "SERVER_PORT" 
+        range: 1024..65535
     }
 
-    threshold: float {
-        default: 0.5
-        range: 0.0..1.0
+    // Advanced Network Types
+    bind_address: ipv4 {
+        default: "0.0.0.0"
     }
-    
-    log_level: enum(debug, info, warn, error) { 
-        default: info
-    }
-    
-    cert_path: path { 
+
+    // Security & Validation (Secret fields are masked in logs)
+    api_key: string {
         required: true
-        exists: true 
+        env: "API_KEY"
+        secret: true
+        pattern: "^[A-F0-9]{32}$"
+        max_length: 32
     }
-    
+
+    // Cross-field Validation
+    enable_tls: bool { default: false }
+    cert_path: path {
+        required_if: enable_tls == true
+        exists: true
+    }
+
+    // Developer Experience (Deprecation warnings)
+    v1_compatibility_mode: bool {
+        default: false
+        deprecated: true
+    }
+
     section database {
+        host: string { default: "localhost" }
         user: string { required: true }
         
-        backup_nodes: [string] {
+        backup_nodes: string[] {
             min_length: 1
         }
     }
@@ -47,28 +62,25 @@ schema AppConfig {
 
 ```bash
 cfgsafe-gen config.schema
-# generates app_config.h + app_config.c
+# generates server_config.h + server_config.c
 ```
 
 ### `main.c` (runtime)
 
 ```c
-#include "app_config.h"
+#include "server_config.h"
 #include <stdio.h>
-#include <stdlib.h>
 
 int main(void) {
-    AppConfig cfg;
+    ServerConfig cfg;
     char err[256];
 
-    // app.conf will be parsed to set values
-    if (cfg_load(&cfg, "app.conf", err, sizeof(err)) != 0) {
+    if (cfg_load(&cfg, "server.conf", err, sizeof(err)) != 0) {
         fprintf(stderr, "Config error: %s\n", err);
         return 1;
     }
 
-    printf("Server running on port %d\n", cfg.port);
-    if (cfg.log_level == LOG_LEVEL_DEBUG) printf("Debug mode enabled\n");
+    printf("Server listening on %s:%d\n", cfg.bind_address, cfg.port);
 }
 ```
 
@@ -76,103 +88,60 @@ int main(void) {
 
 ## Example of generated code
 
-Here is the kind of output `cfgsafe-gen` will produce (shortened for clarity):
+The generator abstracts complex logic into helper functions to keep the API clean and the implementation readable.
 
-**`app_config.h`**
+**`server_config.h`** (Excerpt)
 
 ```c
-#pragma once
-#include <stdbool.h>
-#include <stddef.h>
-
-// generated because config.schema imports validators.h for custom hooks
-#include "validators.h"
-
-// Enums are generated as native C types for fast switching
-typedef enum {
-    LOG_LEVEL_DEBUG,
-    LOG_LEVEL_INFO,
-    LOG_LEVEL_WARN,
-    LOG_LEVEL_ERROR
-} LogLevel;
-
-// Arrays include a 'count' so validators know the exact size
 typedef struct {
-    char** items;
-    size_t count;
-} StringArray;
-
-typedef struct {
+    char* host;
     char* user;
-    StringArray backup_nodes;
+    struct { char** items; size_t count; } backup_nodes;
 } DatabaseSection;
 
 typedef struct {
     int port;
-    float threshold;
-    LogLevel log_level;
+    char* bind_address;
+    char* api_key;
+    bool enable_tls;
     char* cert_path;
+    bool v1_compatibility_mode;
     DatabaseSection database;
-} AppConfig;
+} ServerConfig;
 
-// The load function returns non-zero on any validation failure
-int cfg_load(AppConfig *cfg, const char *path, char *err, size_t err_len);
+int cfg_load(ServerConfig *cfg, const char *path, char *err, size_t err_len);
 ```
 
-**`app_config.c`**
+**`server_config.c`** (Excerpt)
 
 ```c
-#include "app_config.h"
-#include <stdio.h>
-#include <string.h>
-
-static void set_defaults(AppConfig *cfg) {
-    cfg->port = 8080;
-    cfg->threshold = 0.5f;
-    cfg->log_level = LOG_LEVEL_INFO;
-    cfg->database.user = NULL; 
-}
-
-int cfg_load(AppConfig *cfg, const char *path, char *err, size_t err_len) {
+int cfg_load(ServerConfig *cfg, const char *path, char *err, size_t err_len) {
     set_defaults(cfg);
 
-    parse_init(cfg, path, err, err_len);
+    // 1. Load from environment first
+    cfg_internal_env_int("SERVER_PORT", &cfg->port);
+    cfg_internal_env_str("API_KEY", &cfg->api_key);
 
-    // Then automatically generated validation code based on the schema:
+    // 2. Parse the config file...
+    if (parse_file(cfg, path, err, err_len) != 0) return -1;
 
-    // 1.  Range Checks (min: 1, max: 65535)
-    if (cfg->port < 1 || cfg->port > 65535) {
-        snprintf(err, err_len, "port out of range: %d (1..65535)", cfg->port);
+    // 3. Validation (Abstracted into internal helpers)
+    if (!cfg_validate_range_int(cfg->port, 1024, 65535)) {
+        snprintf(err, err_len, "port %d is out of range (1024..65535)", cfg->port);
         return -1;
     }
 
-    // 2. Custom Validator Hooks
-    int success = port_check(cfg->port);
-    if (!success) {
-        snprintf(err, err_len, "custom validation failed for port: %d", cfg->port);
+    if (!cfg_validate_pattern(cfg->api_key, "^[A-F0-9]{32}$")) {
+        snprintf(err, err_len, "api_key: invalid format (expected 32-char hex)");
         return -1;
     }
 
-    // 3. Float Range Checks (0.0..1.0)
-    if (cfg->threshold < 0.0f || cfg->threshold > 1.0f) {
-        snprintf(err, err_len, "threshold out of range: %f (0.0..1.0)", cfg->threshold);
+    // 4. Cross-field logic
+    if (cfg->enable_tls && (cfg->cert_path == NULL)) {
+        snprintf(err, err_len, "cert_path is required when enable_tls is enabled");
         return -1;
     }
 
-    // 4. Required Field Checks
-    if (!cfg->database.user) {
-        snprintf(err, err_len, "missing required field: database.user");
-        return -1;
-    }
-
-    // 5. Array Length Verification (min_length: 1)
-    if (cfg->database.backup_nodes.count < 1) {
-        snprintf(err, err_len, "database.backup_nodes must contain at least 1 node");
-        return -1;
-    }
-
-    return 0; // Success: AppConfig is now guaranteed to be valid
+    return 0;
 }
 ```
-
-This generated code is plain C, easy to read and inspect.
