@@ -1,6 +1,6 @@
 NAME    := cfg-gen
 CC      := gcc
-CFLAGS  := -Wall -Iinclude
+CFLAGS  := -Wall -Iinclude -g
 SRC_DIR := src
 OUT_DIR := out
 

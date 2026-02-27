@@ -1,14 +1,57 @@
 import "validators.h"
 
-schema ServerConfig {
+schema DatabaseConfig {
+    driver: enum(postgres, mysql, sqlite) {
+        default: postgres
+    }
+
+    host: string {
+        default: "localhost"
+        env: "DB_HOST"
+    }
+
     port: int {
-        default: 8080
-        env: "SERVER_PORT" 
-        range: -1024..65535
+        default: 5432
+        range: 1..65535
+    }
+
+    pool_size: int {
+        default: 10
+        range: 1..100
+    }
+}
+
+schema AuthConfig {
+    enabled: bool { 
+        default: true 
+    }
+    
+    provider: enum(jwt, oauth2, basic) {
+        required_if: enabled == true
+        default: jwt
+    }
+
+    token_ttl: int {
+        default: 3600
+        range: 60..86400 // 1 minute to 24 hours
+    }
+}
+
+schema ApiGateway {
+    service_name: string {
+        min_length: 3
+        pattern: "^[a-z0-9-]+$"
+        default: "edge-gateway"
     }
 
     bind_address: ipv4 {
         default: "0.0.0.0"
+        env: "BIND_ADDR"
+    }
+
+    listen_port: int {
+        default: 8080
+        range: 80..9000
     }
 
     enable_tls: bool { 
@@ -20,13 +63,39 @@ schema ServerConfig {
         exists: true
     }
 
-    section database {
-        host: string { default: "localhost" }
-        user: string { required: true }
+    // Using another schema as a field type
+    database: DatabaseConfig {}
+
+    // Another component
+    auth: AuthConfig {}
+
+    section logging {
+        level: enum(debug, info, warn, error) {
+            default: info
+        }
         
-        backup_nodes : string[] {
+        file_path: path {
+            default: "/var/log/gateway.log"
+        }
+
+        max_backups: int {
+            default: 5
+            range: 0..100
+        }
+    }
+
+    section caching {
+        enabled: bool { default: false }
+        
+        // Array type with constraints
+        nodes: string[] {
             min_length: 1
+            required_if: enabled == true
+        }
+
+        ttl: int {
+            default: 300
+            range: 0..3600
         }
     }
 }
-
