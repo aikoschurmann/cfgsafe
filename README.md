@@ -16,7 +16,7 @@ Stop writing boilerplate string-to-int parsing code. Stop silently ignoring inva
 ## Why cfgsafe?
 
 * **Zero Dependencies**: Pure C99 implementation. No external regex engines or complex build steps required.
-* **Type Safety**: Forget `void*` dictionaries. Access configs as `cfg.database.port` with the correct native C types (`int64_t`, `double`, `bool`, arrays, and `enum`s).
+* **Type Safety**: Forget `void*` dictionaries. Your schema is compiled directly into standard C `struct`s, allowing you to access configuration fields naturally (e.g., `cfg.listen_port`, `cfg.database.host`) with the correct native C types (`int64_t`, `double`, `bool`, arrays, and `enum`s) automatically inferred.
 * **Deep Validation**: First-class support for numeric `range`s, string `min_length`/`max_length`, regex `pattern` matching, and file `exists` checks.
 * **Conditional Logic**: Complex cross-field validation out of the box (e.g., `required_if: enable_tls == true`).
 * **Single-Header Output**: Generates one `.h` file containing both the data structures and the implementation logic.
@@ -80,11 +80,38 @@ schema ApiGateway {
             min_length: 1
             required_if: enabled == true
         }
+
+        // Deeply nested section
+        section redis {
+            pool_size: int { default: 10 }
+        }
     }
 }
 ```
 
-### 2. Run the Generator
+### 2. Provide the Data (`config.ini`)
+
+The runtime parser consumes standard INI file syntax mapping logically to the structures you defined. For nested sections or embedded schemas, `cfgsafe` uses dot-notation `[parent.child]` for headers.
+
+```ini
+service_name = edge-gateway
+bind_address = 127.0.0.1
+enable_tls = false
+
+[database]
+driver = postgres
+host = db.local
+port = 5432
+
+[caching]
+enabled = true
+nodes = cache-1.local,cache-2.local
+
+[caching.redis]
+pool_size = 20
+```
+
+### 3. Run the Generator
 
 Compile your schema into a C header file using the `cfgsafe` generator:
 
@@ -93,7 +120,7 @@ cfg-gen config.schema
 # Outputs -> config.h
 ```
 
-### 3. Runtime Integration (`main.c`)
+### 4. Runtime Integration (`main.c`)
 
 Include the generated header. Define `CONFIG_IMPLEMENTATION` in exactly *one* C file to compile the implementation logic. Load an INI file (e.g. `config.ini`).
 
@@ -130,6 +157,16 @@ int main(void) {
     return 0;
 }
 ```
+
+---
+
+## Examples
+
+To see a fully working example including error recovery, environment override testing, and complex data models, check out the `examples/` directory in our repository:
+
+1. `examples/config.schema`: The comprehensive test schema
+2. `examples/config.ini`: The mock configuration data
+3. `examples/test_loader.c`: An implementation demonstrating safe extraction
 
 ---
 

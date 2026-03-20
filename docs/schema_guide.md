@@ -48,23 +48,45 @@ schema Config {
 ```
 In C, this generates:
 ```c
-char** ip_allowlist;
-sonst cize_t ip_allowlist_len;
+const char** ip_allowlist;
+size_t ip_allowlist_len;
 ```
 
-## Nesting and Grouping
+## Nesting and Mapping to INI Files
 
-### Sections
+The underlying data format consumed by the generated parser is a standard INI file. `cfgsafe` enforces a strict one-to-one mapping between your schema and the loaded INI structures.
 
-You can group fields logically using the `section` keyword. This maps to nested structures in C and maps directly to `[section_name]` blocks in INI files.
+* **Top-Level Fields:** Fields directly under the `schema` block map to global keys at the top of the `.ini` file (before any `[section]` is declared).
+* **Sections:** You can group fields logically using the `section` keyword. This maps to nested structures in C and maps directly to `[section_name]` headers in INI files.
+* **Deep Nesting:** If you place a `section` inside another `section` (or embed a schema inside a `section`), you use dot-notation in the INI file to map the structure (e.g. `[parent.child]`).
+* **Embedded Schemas:** Schemas embedded directly as field types behave exactly like a `section` named after the field variable.
 
+**Schema:**
 ```scala
 schema Config {
+    service_name: string
+
     section database {
         host: string
         port: int
+        
+        section pooling {
+            max_connections: int
+        }
     }
 }
+```
+
+**Mapped INI File:**
+```ini
+service_name = "Auth Service"
+
+[database]
+host = "10.0.0.1"
+port = 5432
+
+[database.pooling]
+max_connections = 100
 ```
 
 ### Embedded Schemas
