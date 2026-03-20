@@ -67,7 +67,7 @@ InternResult* intern(DenseInterner *interner,
                      Slice *slice,
                      void *meta)
 {
-    if (!interner || !slice || !slice->ptr || slice->len == 0) return NULL;
+    if (!interner || !slice || !slice->ptr) return NULL;
 
     /* Lookup existing entry */
     InternResult *found = hashmap_get(interner->hashmap, slice, interner->hash_func, interner->cmp_func);
@@ -126,7 +126,7 @@ int intern_idx(DenseInterner *I, Slice* slice, void *meta) {
 
 InternResult* intern_peek(DenseInterner *interner, Slice *slice)
 {
-    if (!interner || !slice || !slice->ptr || slice->len == 0) return NULL;
+    if (!interner || !slice || !slice->ptr) return NULL;
 
     /* Lookup existing entry without inserting */
     return hashmap_get(interner->hashmap, slice, interner->hash_func, interner->cmp_func);

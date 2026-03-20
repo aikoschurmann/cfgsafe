@@ -7,10 +7,10 @@ OUT_DIR := out
 SRCS    := $(shell find $(SRC_DIR) -name '*.c')
 BIN     := $(OUT_DIR)/$(NAME)
 
-TEST_DIR    := tests/torture
-TEST_RUNNER := $(OUT_DIR)/torture_runner
-TEST_SCHEMA := $(TEST_DIR)/torture.schema
-TEST_HEADER := $(TEST_DIR)/generated_torture.h
+TEST_DIR    := tests/integration
+TEST_RUNNER := $(OUT_DIR)/integration_runner
+TEST_SCHEMA := $(TEST_DIR)/integration.schema
+TEST_HEADER := $(TEST_DIR)/generated_integration.h
 
 .PHONY: all clean test
 
@@ -24,8 +24,8 @@ test: $(BIN)
 	@echo "--- Generating config header ---"
 	./$(BIN) -o $(TEST_HEADER) $(TEST_SCHEMA)
 	@echo "--- Compiling test runner ---"
-	$(CC) $(CFLAGS) -Iinclude -I$(TEST_DIR) $(TEST_DIR)/torture_runner.c -o $(TEST_RUNNER)
-	@echo "--- Running torture tests ---"
+	$(CC) $(CFLAGS) -Iinclude -I$(TEST_DIR) $(TEST_DIR)/integration_runner.c -o $(TEST_RUNNER)
+	@echo "--- Running integration tests ---"
 	cd $(TEST_DIR) && ../../$(TEST_RUNNER)
 
 clean:

@@ -41,6 +41,7 @@ static const char* get_str(InternResult *res) {
 }
 
 static bool is_schema_name(CodegenContext *ctx, const char *name) {
+    if (!name || strcmp(name, "unknown") == 0) return false;
     AstProgram *prog = &ctx->program->data.program;
     for (size_t i = 0; i < prog->schemas->count; i++) {
         AstNode *schema = *(AstNode**)dynarray_get(prog->schemas, i);
@@ -52,6 +53,7 @@ static bool is_schema_name(CodegenContext *ctx, const char *name) {
 }
 
 static AstNode* get_schema_by_name(CodegenContext *ctx, const char *name) {
+    if (!name || strcmp(name, "unknown") == 0) return NULL;
     AstProgram *prog = &ctx->program->data.program;
     for (size_t i = 0; i < prog->schemas->count; i++) {
         AstNode *schema = *(AstNode**)dynarray_get(prog->schemas, i);
@@ -283,52 +285,52 @@ static void emit_validation_logic(UsageTracker *tracker, FILE *f, AstNode *field
         if (strcmp(pname, "range") == 0) {
             AstRangeExpr *range = &prop->value->data.range_expr;
             if (range->min->data.literal.type == INT_LITERAL) {
-                fprintf(f, "    if (%s%s < %lld || %s%s > %lld) { fprintf(stderr, \"Validation failed: %s range check\\n\"); return false; }\n", 
+                fprintf(f, "    if (%s%s < %lld || %s%s > %lld) { cfg_set_error(err, \"value out of range\", \"%s\", 0); return false; }\n", 
                     prefix, fname, range->min->data.literal.value.int_val,
                     prefix, fname, range->max->data.literal.value.int_val, fname);
             } else {
-                fprintf(f, "    if (%s%s < %f || %s%s > %f) { fprintf(stderr, \"Validation failed: %s range check\\n\"); return false; }\n", 
+                fprintf(f, "    if (%s%s < %f || %s%s > %f) { cfg_set_error(err, \"value out of range\", \"%s\", 0); return false; }\n", 
                     prefix, fname, range->min->data.literal.value.float_val,
                     prefix, fname, range->max->data.literal.value.float_val, fname);
             }
         } else if (strcmp(pname, "min") == 0) {
             if (prop->value->data.literal.type == INT_LITERAL) {
-                fprintf(f, "    if (%s%s < %lld) { fprintf(stderr, \"Validation failed: %s min check\\n\"); return false; }\n", prefix, fname, prop->value->data.literal.value.int_val, fname);
+                fprintf(f, "    if (%s%s < %lld) { cfg_set_error(err, \"value too small\", \"%s\", 0); return false; }\n", prefix, fname, prop->value->data.literal.value.int_val, fname);
             } else {
-                fprintf(f, "    if (%s%s < %f) { fprintf(stderr, \"Validation failed: %s min check\\n\"); return false; }\n", prefix, fname, prop->value->data.literal.value.float_val, fname);
+                fprintf(f, "    if (%s%s < %f) { cfg_set_error(err, \"value too small\", \"%s\", 0); return false; }\n", prefix, fname, prop->value->data.literal.value.float_val, fname);
             }
         } else if (strcmp(pname, "max") == 0) {
             if (prop->value->data.literal.type == INT_LITERAL) {
-                fprintf(f, "    if (%s%s > %lld) { fprintf(stderr, \"Validation failed: %s max check\\n\"); return false; }\n", prefix, fname, prop->value->data.literal.value.int_val, fname);
+                fprintf(f, "    if (%s%s > %lld) { cfg_set_error(err, \"value too large\", \"%s\", 0); return false; }\n", prefix, fname, prop->value->data.literal.value.int_val, fname);
             } else {
-                fprintf(f, "    if (%s%s > %f) { fprintf(stderr, \"Validation failed: %s max check\\n\"); return false; }\n", prefix, fname, prop->value->data.literal.value.float_val, fname);
+                fprintf(f, "    if (%s%s > %f) { cfg_set_error(err, \"value too large\", \"%s\", 0); return false; }\n", prefix, fname, prop->value->data.literal.value.float_val, fname);
             }
         } else if (strcmp(pname, "min_length") == 0) {
             if (field->data.field_decl.type->data.ast_type.kind == AST_TYPE_ARRAY) {
-                fprintf(f, "    if (%s%s.count < %lld) { fprintf(stderr, \"Validation failed: %s min_length check\\n\"); return false; }\n", prefix, fname, prop->value->data.literal.value.int_val, fname);
+                fprintf(f, "    if (%s%s.count < %lld) { cfg_set_error(err, \"array too short\", \"%s\", 0); return false; }\n", prefix, fname, prop->value->data.literal.value.int_val, fname);
             } else {
-                fprintf(f, "    if (%s%s != NULL && strlen(%s%s) < %lld) { fprintf(stderr, \"Validation failed: %s min_length check\\n\"); return false; }\n", 
+                fprintf(f, "    if (%s%s != NULL && strlen(%s%s) < %lld) { cfg_set_error(err, \"string too short\", \"%s\", 0); return false; }\n", 
                         prefix, fname, prefix, fname, prop->value->data.literal.value.int_val, fname);
             }
         } else if (strcmp(pname, "max_length") == 0) {
             if (field->data.field_decl.type->data.ast_type.kind == AST_TYPE_ARRAY) {
-                fprintf(f, "    if (%s%s.count > %lld) { fprintf(stderr, \"Validation failed: %s max_length check\\n\"); return false; }\n", prefix, fname, prop->value->data.literal.value.int_val, fname);
+                fprintf(f, "    if (%s%s.count > %lld) { cfg_set_error(err, \"array too long\", \"%s\", 0); return false; }\n", prefix, fname, prop->value->data.literal.value.int_val, fname);
             } else {
-                fprintf(f, "    if (%s%s != NULL && strlen(%s%s) > %lld) { fprintf(stderr, \"Validation failed: %s max_length check\\n\"); return false; }\n", 
+                fprintf(f, "    if (%s%s != NULL && strlen(%s%s) > %lld) { cfg_set_error(err, \"string too long\", \"%s\", 0); return false; }\n", 
                         prefix, fname, prefix, fname, prop->value->data.literal.value.int_val, fname);
             }
         } else if (strcmp(pname, "exists") == 0 && prop->value->data.literal.value.bool_val) {
-            fprintf(f, "    if (%s%s != NULL && !CFG_FILE_EXISTS(%s%s)) { fprintf(stderr, \"Validation failed: %s file existence check\\n\"); return false; }\n", prefix, fname, prefix, fname, fname);
+            fprintf(f, "    if (%s%s != NULL && !CFG_FILE_EXISTS(%s%s)) { cfg_set_error(err, \"file does not exist\", \"%s\", 0); return false; }\n", prefix, fname, prefix, fname, fname);
         } else if (strcmp(pname, "pattern") == 0) {
             const char *pattern = get_str(prop->value->data.literal.value.string_val);
             int idx = get_regex_index(tracker, pattern);
-            fprintf(f, "    if (%s%s != NULL && !cfg_pattern_%d_match(%s%s)) { fprintf(stderr, \"Validation failed: %s pattern match check\\n\"); return false; }\n", 
+            fprintf(f, "    if (%s%s != NULL && !cfg_pattern_%d_match(%s%s)) { cfg_set_error(err, \"pattern mismatch\", \"%s\", 0); return false; }\n", 
                     prefix, fname, idx, prefix, fname, fname);
         } else if (strcmp(pname, "required") == 0 && prop->value->data.literal.value.bool_val) {
             if (can_be_empty(field)) {
                 fprintf(f, "    if (");
                 emit_field_empty_check(f, field, prefix);
-                fprintf(f, ") { fprintf(stderr, \"Validation failed: %s is required\\n\"); return false; }\n", fname);
+                fprintf(f, ") { cfg_set_error(err, \"required field missing\", \"%s\", 0); return false; }\n", fname);
             }
         } else if (strcmp(pname, "required_if") == 0) {
             if (can_be_empty(field)) {
@@ -336,7 +338,7 @@ static void emit_validation_logic(UsageTracker *tracker, FILE *f, AstNode *field
                 emit_condition_expression(f, prop->value, prefix);
                 fprintf(f, ") {\n        if (");
                 emit_field_empty_check(f, field, prefix);
-                fprintf(f, ") { fprintf(stderr, \"Validation failed: %s is required by condition\\n\"); return false; }\n    }\n", fname);
+                fprintf(f, ") { cfg_set_error(err, \"field required by condition missing\", \"%s\", 0); return false; }\n    }\n", fname);
             }
         }
     }
@@ -374,6 +376,16 @@ static void emit_default_initialization(FILE *f, AstNode *field, const char *pre
                 default: break;
             }
         }
+    } else {
+        AstType *type = &field->data.field_decl.type->data.ast_type;
+        if (type->kind == AST_TYPE_PRIMITIVE) {
+             const char* tname = get_str(type->u.primitive.name);
+             if (strcmp(tname, "int") == 0 || strcmp(tname, "float") == 0) {
+                 fprintf(f, "    %s%s = 0;\n", prefix, get_str(name));
+             } else if (strcmp(tname, "bool") == 0) {
+                 fprintf(f, "    %s%s = false;\n", prefix, get_str(name));
+             }
+        }
     }
 }
 
@@ -405,33 +417,60 @@ static void emit_env_overrides(UsageTracker *tracker, FILE *f, AstNode *field, c
     }
 }
 
-static void emit_default_initialization_recursive(FILE *f, AstNode *node, const char *prefix, const char *ctx_name) {
+static void emit_default_initialization_recursive(CodegenContext *ctx, FILE *f, AstNode *node, const char *prefix, const char *ctx_name) {
     DynArray *items = (node->node_type == AST_SCHEMA_DECL) ? node->data.schema_decl.items : node->data.section_decl.items;
     for (size_t i = 0; i < items->count; i++) {
         AstNode *item = *(AstNode**)dynarray_get(items, i);
         if (item->node_type == AST_FIELD_DECL) {
-            const char *parent_name = (node->node_type == AST_SCHEMA_DECL) ? get_str(node->data.schema_decl.name) : get_str(node->data.section_decl.name);
-            emit_default_initialization(f, item, prefix, parent_name, ctx_name);
+            AstNode *type_node = item->data.field_decl.type;
+            if (type_node->data.ast_type.kind == AST_TYPE_PRIMITIVE) {
+                const char *tname = get_str(type_node->data.ast_type.u.primitive.name);
+                if (is_schema_name(ctx, tname)) {
+                    char new_prefix[256];
+                    snprintf(new_prefix, sizeof(new_prefix), "%s%s.", prefix, get_str(item->data.field_decl.name));
+                    AstNode *target_schema = get_schema_by_name(ctx, tname);
+                    emit_default_initialization_recursive(ctx, f, target_schema, new_prefix, ctx_name);
+                } else {
+                    const char *parent_name = (node->node_type == AST_SCHEMA_DECL) ? get_str(node->data.schema_decl.name) : get_str(node->data.section_decl.name);
+                    emit_default_initialization(f, item, prefix, parent_name, ctx_name);
+                }
+            } else {
+                const char *parent_name = (node->node_type == AST_SCHEMA_DECL) ? get_str(node->data.schema_decl.name) : get_str(node->data.section_decl.name);
+                emit_default_initialization(f, item, prefix, parent_name, ctx_name);
+            }
         } else if (item->node_type == AST_SECTION_DECL) {
             const char *sec_name = get_str(item->data.section_decl.name);
             char new_prefix[256];
             snprintf(new_prefix, sizeof(new_prefix), "%s%s.", prefix, sec_name);
-            emit_default_initialization_recursive(f, item, new_prefix, ctx_name);
+            emit_default_initialization_recursive(ctx, f, item, new_prefix, ctx_name);
         }
     }
 }
 
-static void emit_env_overrides_recursive(UsageTracker *tracker, FILE *f, AstNode *node, const char *prefix, const char *ctx_name) {
+static void emit_env_overrides_recursive(CodegenContext *ctx, UsageTracker *tracker, FILE *f, AstNode *node, const char *prefix, const char *ctx_name) {
     DynArray *items = (node->node_type == AST_SCHEMA_DECL) ? node->data.schema_decl.items : node->data.section_decl.items;
     for (size_t i = 0; i < items->count; i++) {
         AstNode *item = *(AstNode**)dynarray_get(items, i);
         if (item->node_type == AST_FIELD_DECL) {
-            emit_env_overrides(tracker, f, item, prefix, ctx_name);
+            AstNode *type_node = item->data.field_decl.type;
+            if (type_node->data.ast_type.kind == AST_TYPE_PRIMITIVE) {
+                const char *tname = get_str(type_node->data.ast_type.u.primitive.name);
+                if (is_schema_name(ctx, tname)) {
+                    char new_prefix[256];
+                    snprintf(new_prefix, sizeof(new_prefix), "%s%s.", prefix, get_str(item->data.field_decl.name));
+                    AstNode *target_schema = get_schema_by_name(ctx, tname);
+                    emit_env_overrides_recursive(ctx, tracker, f, target_schema, new_prefix, ctx_name);
+                } else {
+                    emit_env_overrides(tracker, f, item, prefix, ctx_name);
+                }
+            } else {
+                emit_env_overrides(tracker, f, item, prefix, ctx_name);
+            }
         } else if (item->node_type == AST_SECTION_DECL) {
             const char *sec_name = get_str(item->data.section_decl.name);
             char new_prefix[256];
             snprintf(new_prefix, sizeof(new_prefix), "%s%s.", prefix, sec_name);
-            emit_env_overrides_recursive(tracker, f, item, new_prefix, ctx_name);
+            emit_env_overrides_recursive(ctx, tracker, f, item, new_prefix, ctx_name);
         }
     }
 }
@@ -513,7 +552,7 @@ static void emit_validation_function(UsageTracker *tracker, CodegenContext *ctx,
         ? node->data.schema_decl.items 
         : node->data.section_decl.items;
 
-    fprintf(f, "bool %s_validate(const %s_t *cfg) {\n", name, name);
+    fprintf(f, "bool %s_validate(const %s_t *cfg, cfg_error_t *err) {\n", name, name);
     fprintf(f, "    if (!cfg) return false;\n");
     
     for (size_t i = 0; i < items->count; i++) {
@@ -524,11 +563,11 @@ static void emit_validation_function(UsageTracker *tracker, CodegenContext *ctx,
             if (type_node->node_type == AST_TYPE && type_node->data.ast_type.kind == AST_TYPE_PRIMITIVE) {
                 const char *tname = get_str(type_node->data.ast_type.u.primitive.name);
                 if (is_schema_name(ctx, tname)) {
-                    fprintf(f, "    if (!%s_validate(&cfg->%s)) return false;\n", tname, get_str(item->data.field_decl.name));
+                    fprintf(f, "    if (!%s_validate(&cfg->%s, err)) return false;\n", tname, get_str(item->data.field_decl.name));
                 }
             }
         } else if (item->node_type == AST_SECTION_DECL) {
-            fprintf(f, "    if (!%s_validate(&cfg->%s)) return false;\n", get_str(item->data.section_decl.name), get_str(item->data.section_decl.name));
+            fprintf(f, "    if (!%s_validate(&cfg->%s, err)) return false;\n", get_str(item->data.section_decl.name), get_str(item->data.section_decl.name));
         }
     }
     fprintf(f, "    return true;\n}\n\n");
@@ -546,7 +585,7 @@ static void emit_validation_prototypes(FILE *f, AstNode *node, const char *name)
         ? node->data.schema_decl.items 
         : node->data.section_decl.items;
 
-    fprintf(f, "bool %s_validate(const %s_t *cfg);\n", name, name);
+    fprintf(f, "bool %s_validate(const %s_t *cfg, cfg_error_t *err);\n", name, name);
     for (size_t i = 0; i < items->count; i++) {
         AstNode *item = *(AstNode**)dynarray_get(items, i);
         if (item->node_type == AST_SECTION_DECL) {
@@ -708,6 +747,12 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
     fprintf(f, "    CFG_ERR_VALIDATION,\n");
     fprintf(f, "} cfg_status_t;\n\n");
 
+    fprintf(f, "typedef struct {\n");
+    fprintf(f, "    char message[512];\n");
+    fprintf(f, "    char field[256];\n");
+    fprintf(f, "    size_t line;\n");
+    fprintf(f, "} cfg_error_t;\n\n");
+
     AstProgram *prog = &ctx->program->data.program;
 
     for (size_t i = 0; i < prog->schemas->count; i++) {
@@ -725,7 +770,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
     for (size_t i = 0; i < prog->schemas->count; i++) {
         AstNode *schema = *(AstNode**)dynarray_get(prog->schemas, i);
         const char* schema_name = get_str(schema->data.schema_decl.name);
-        fprintf(f, "cfg_status_t %s_load(%s_t *cfg, const char *filename);\n", schema_name, schema_name);
+        fprintf(f, "cfg_status_t %s_load(%s_t *cfg, const char *filename, cfg_error_t *err);\n", schema_name, schema_name);
         fprintf(f, "void %s_free(%s_t *cfg);\n", schema_name, schema_name);
         emit_validation_prototypes(f, schema, schema_name);
     }
@@ -820,9 +865,16 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "}\n\n");
     }
 
+    fprintf(f, "static void cfg_set_error(cfg_error_t *err, const char *msg, const char *field, size_t line) {\n");
+    fprintf(f, "    if (!err) return;\n");
+    fprintf(f, "    if (msg) { strncpy(err->message, msg, sizeof(err->message) - 1); err->message[sizeof(err->message) - 1] = '\\0'; }\n");
+    fprintf(f, "    if (field) { strncpy(err->field, field, sizeof(err->field) - 1); err->field[sizeof(err->field) - 1] = '\\0'; }\n");
+    fprintf(f, "    err->line = line;\n");
+    fprintf(f, "}\n\n");
+
     fprintf(f, "typedef void (*cfg_ini_cb)(void *user, const char *sec, const char *key, const char *val);\n");
-    fprintf(f, "static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, void *user) {\n");
-    fprintf(f, "    FILE *f = fopen(filename, \"r\"); if (!f) return CFG_ERR_OPEN_FILE;\n");
+    fprintf(f, "static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, void *user, cfg_error_t *err) {\n");
+    fprintf(f, "    FILE *f = fopen(filename, \"r\"); if (!f) { cfg_set_error(err, \"failed to open file\", filename, 0); return CFG_ERR_OPEN_FILE; }\n");
     fprintf(f, "    char line[4096], section[256] = \"\";\n");
     fprintf(f, "    size_t line_num = 0; bool success = true;\n");
     fprintf(f, "    while (fgets(line, sizeof(line), f)) {\n");
@@ -835,7 +887,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
     fprintf(f, "                if (len >= sizeof(section)) len = sizeof(section) - 1;\n");
     fprintf(f, "                strncpy(section, p + 1, len);\n");
     fprintf(f, "                section[len] = '\\0';\n");
-    fprintf(f, "            } else { fprintf(stderr, \"INI Syntax Error: missing ']' at line %%zu\\n\", line_num); success = false; }\n");
+    fprintf(f, "            } else { cfg_set_error(err, \"missing closing bracket for section\", section, line_num); success = false; }\n");
     fprintf(f, "        } else {\n");
     fprintf(f, "            char *eq = strchr(p, '=');\n");
     fprintf(f, "            if (eq) {\n");
@@ -845,7 +897,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
     fprintf(f, "                char *v_end = val + strlen(val) - 1; while(v_end > val && isspace(*v_end)) *v_end-- = '\\0';\n");
     fprintf(f, "                cb(user, section, key, val);\n");
     fprintf(f, "            } else {\n");
-    fprintf(f, "                fprintf(stderr, \"INI Syntax Error: missing '=' at line %%zu\\n\", line_num); success = false;\n");
+    fprintf(f, "                cfg_set_error(err, \"missing assignment operator\", p, line_num); success = false;\n");
     fprintf(f, "            }\n");
     fprintf(f, "        }\n");
     fprintf(f, "    }\n");
@@ -881,22 +933,23 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "    %s_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);\n", schema_name);
         fprintf(f, "}\n\n");
 
-        fprintf(f, "cfg_status_t %s_load(%s_t *cfg, const char *filename) {\n", schema_name, schema_name);
+        fprintf(f, "cfg_status_t %s_load(%s_t *cfg, const char *filename, cfg_error_t *err) {\n", schema_name, schema_name);
         fprintf(f, "    if (!cfg) return CFG_ERR_VALIDATION;\n");
         fprintf(f, "    memset(cfg, 0, sizeof(%s_t));\n", schema_name);
         fprintf(f, "    cfg_common_context_t ctx = { cfg, NULL };\n");
+        fprintf(f, "    if (err) memset(err, 0, sizeof(cfg_error_t));\n");
         
-        emit_default_initialization_recursive(f, schema, "cfg->", "&ctx");
+        emit_default_initialization_recursive(ctx, f, schema, "cfg->", "&ctx");
 
         fprintf(f, "    if (filename) {\n");
-        fprintf(f, "        cfg_status_t status = cfg_parse_ini(filename, %s_ini_handler, &ctx);\n", schema_name);
+        fprintf(f, "        cfg_status_t status = cfg_parse_ini(filename, %s_ini_handler, &ctx, err);\n", schema_name);
         fprintf(f, "        if (status != CFG_SUCCESS) { cfg_pool_free(ctx.pool); return status; }\n");
         fprintf(f, "    }\n");
 
-        emit_env_overrides_recursive(&tracker, f, schema, "cfg->", "&ctx");
+        emit_env_overrides_recursive(ctx, &tracker, f, schema, "cfg->", "&ctx");
 
         fprintf(f, "    cfg->internal_pool = ctx.pool;\n");
-        fprintf(f, "    if (!%s_validate(cfg)) { %s_free(cfg); return CFG_ERR_VALIDATION; }\n", schema_name, schema_name);
+        fprintf(f, "    if (!%s_validate(cfg, err)) { %s_free(cfg); return CFG_ERR_VALIDATION; }\n", schema_name, schema_name);
         fprintf(f, "    return CFG_SUCCESS;\n");
         fprintf(f, "}\n\n");
 

@@ -1,147 +1,134 @@
 # cfgsafe — Safe, validated C configuration
 
-### This is only an idea for now
-**cfgsafe** is a small C library + code generator that turns a programmer‑defined schema into a validated, typed `struct` your program can use with zero runtime failure paths. The generator reads the schema from file, produces `*.h`/`*.c` with defaults + validation, and your program simply calls a generated `cfg_load` function at startup.
+**cfgsafe** is a small C library and code generator that turns a programmer‑defined schema into a validated, typed `struct` your program can use with zero runtime failure paths. The generator reads the schema from a file, produces a single-header library (STB-style) with defaults and validation, and your program simply calls a generated `*_load` function at startup.
 
 ---
 
-## Quick start (example)
+## Features
 
-### `config.schema` (what you write)
+* **Strict Typing & Enums:** Generates native C types (`int64_t`, `double`, `bool`, arrays, and `enum`s).
+* **Deep Nesting:** Compose configurations using `section` blocks or by embedding other `schema`s.
+* **Rich Validation:** Built-in support for numeric `range`s, string `min_length`/`max_length`, regex `pattern` matching, and file `exists` checks.
+* **Conditional Logic:** Cross-field validation using `required_if`.
+* **Environment Overrides:** Seamlessly override specific file configuration keys with environment variables.
+* **Single-Header Output:** Generates a single `.h` file containing both the definitions and the implementation.
+
+---
+
+## Quick start
+
+### 1. `config.schema` (what you write)
+
+Define your configuration structure, validation rules, and defaults.
 
 ```scala
-import "validators.h"
-
-schema ServerConfig {
-    // Environment Variable Override & Defaults
-    port: int {
-        default: 8080
-        env: "SERVER_PORT" 
-        range: 1024..65535
+schema DatabaseConfig {
+    driver: enum(postgres, mysql, sqlite) {
+        default: postgres
     }
 
-    // Advanced Network Types
+    host: string {
+        default: "localhost"
+        env: "DB_HOST"
+    }
+
+    port: int {
+        default: 5432
+        range: 1..65535
+    }
+}
+
+schema ApiGateway {
+    service_name: string {
+        min_length: 3
+        pattern: "^[a-z0-9-]+$"
+        default: "edge-gateway"
+    }
+
     bind_address: ipv4 {
         default: "0.0.0.0"
+        env: "BIND_ADDR"
     }
 
-    // Security & Validation (Secret fields are masked in logs)
-    api_key: string {
-        required: true
-        env: "API_KEY"
-        secret: true
-        pattern: "^[A-F0-9]{32}$"
-        max_length: 32
+    enable_tls: bool { 
+        default: false 
     }
 
-    // Cross-field Validation
-    enable_tls: bool { default: false }
     cert_path: path {
         required_if: enable_tls == true
         exists: true
     }
 
-    // Developer Experience (Deprecation warnings)
-    v1_compatibility_mode: bool {
-        default: false
-        deprecated: true
-    }
+    // Embed another schema
+    database: DatabaseConfig {}
 
-    section database {
-        host: string { default: "localhost" }
-        user: string { required: true }
+    section caching {
+        enabled: bool { default: false }
         
-        backup_nodes: string[] {
+        // Array type with constraints
+        nodes: string[] {
             min_length: 1
+            required_if: enabled == true
         }
     }
 }
 ```
 
-### Run generator
+### 2. Run the generator
+
+Compile your schema into a C header file.
 
 ```bash
-cfgsafe-gen config.schema
-# generates server_config.h + server_config.c
+cfg-gen config.schema
+# Generates config.h
 ```
 
-### `main.c` (runtime)
+### 3. `main.c` (runtime)
+
+Include the generated header. Define `CONFIG_IMPLEMENTATION` in exactly *one* C file to compile the implementation logic.
 
 ```c
-#include "server_config.h"
+#define CONFIG_IMPLEMENTATION
+#include "config.h"
 #include <stdio.h>
+#include <string.h>
 
 int main(void) {
-    ServerConfig cfg;
-    char err[256];
-
-    if (cfg_load(&cfg, "server.conf", err, sizeof(err)) != 0) {
-        fprintf(stderr, "Config error: %s\n", err);
+    ApiGateway_t cfg;
+    cfg_error_t err;
+    
+    printf("--- Loading Configuration ---\n");
+    
+    // Load from INI file, apply env overrides, and run all validations
+    cfg_status_t status = ApiGateway_load(&cfg, "config.ini", &err);
+    
+    if (status == CFG_SUCCESS) {
+        printf("Service Name: %s\n", cfg.service_name);
+        printf("Database Host: %s\n", cfg.database.host);
+        
+        // Free dynamically allocated memory (strings, arrays)
+        ApiGateway_free(&cfg);
+    } else {
+        // Detailed error reporting
+        printf("Config Status: FAILURE (code %d)\n", (int)status);
+        printf("Error: %s\n", err.message);
+        printf("Field: %s\n", err.field);
+        if (err.line > 0) printf("Line: %zu\n", err.line);
         return 1;
-    }
-
-    printf("Server listening on %s:%d\n", cfg.bind_address, cfg.port);
-}
-```
-
----
-
-## Example of generated code
-
-The generator abstracts complex logic into helper functions to keep the API clean and the implementation readable.
-
-**`server_config.h`** (Excerpt)
-
-```c
-typedef struct {
-    char* host;
-    char* user;
-    struct { char** items; size_t count; } backup_nodes;
-} DatabaseSection;
-
-typedef struct {
-    int port;
-    char* bind_address;
-    char* api_key;
-    bool enable_tls;
-    char* cert_path;
-    bool v1_compatibility_mode;
-    DatabaseSection database;
-} ServerConfig;
-
-int cfg_load(ServerConfig *cfg, const char *path, char *err, size_t err_len);
-```
-
-**`server_config.c`** (Excerpt)
-
-```c
-int cfg_load(ServerConfig *cfg, const char *path, char *err, size_t err_len) {
-    set_defaults(cfg);
-
-    // 1. Load from environment first
-    cfg_internal_env_int("SERVER_PORT", &cfg->port);
-    cfg_internal_env_str("API_KEY", &cfg->api_key);
-
-    // 2. Parse the config file...
-    if (parse_file(cfg, path, err, err_len) != 0) return -1;
-
-    // 3. Validation (Abstracted into internal helpers)
-    if (!cfg_validate_range_int(cfg->port, 1024, 65535)) {
-        snprintf(err, err_len, "port %d is out of range (1024..65535)", cfg->port);
-        return -1;
-    }
-
-    if (!cfg_validate_pattern(cfg->api_key, "^[A-F0-9]{32}$")) {
-        snprintf(err, err_len, "api_key: invalid format (expected 32-char hex)");
-        return -1;
-    }
-
-    // 4. Cross-field logic
-    if (cfg->enable_tls && (cfg->cert_path == NULL)) {
-        snprintf(err, err_len, "cert_path is required when enable_tls is enabled");
-        return -1;
     }
 
     return 0;
 }
 ```
+
+---
+
+## Error Handling
+
+`cfgsafe` provides granular error reporting through the `cfg_error_t` struct, which populates a human-readable `message`, the specific `field` that failed validation, and the `line` number (if a syntax error occurred in the INI file).
+
+Possible `cfg_status_t` return codes:
+* `CFG_SUCCESS` (0): Configuration loaded and validated successfully.
+* `CFG_ERR_OPEN_FILE`: The specified INI file could not be read.
+* `CFG_ERR_SYNTAX`: The INI file contained malformed syntax.
+* `CFG_ERR_VALIDATION`: The configuration failed a schema constraint (e.g., out of bounds, missing required field, pattern mismatch).

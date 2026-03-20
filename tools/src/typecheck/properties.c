@@ -97,6 +97,7 @@ static const char* literal_type_to_string(LiteralType type) {
 }
 
 static bool is_valid_ipv4(const char *s) {
+    if (!s) return false;
     int dots = 0;
     int num = 0;
     int has_num = 0;
@@ -133,6 +134,8 @@ static bool check_enum_member(Arena *arena, Type *field_type, AstNode *literal, 
     if (literal->data.literal.type != IDENTIFIER_LITERAL) return false;
 
     InternResult *val = literal->data.literal.value.string_val;
+    if (!val || !val->key) return false;
+
     DynArray *members = field_type->data.enum_type.members;
     for (size_t i = 0; i < members->count; i++) {
         InternResult *member = *(InternResult**)dynarray_get(members, i);
@@ -182,7 +185,9 @@ static bool check_value_matches(Arena *arena, DynArray *errors, const char *file
 
             // Semantic format checks
             if (expected_lit == STRING_LITERAL) {
-                const char *s = ((Slice*)value_node->data.literal.value.string_val->key)->ptr;
+                InternResult *res = value_node->data.literal.value.string_val;
+                const char *s = (res && res->key) ? ((Slice*)res->key)->ptr : "";
+                
                 if (field_type->kind == TYPE_PRIMITIVE && field_type->data.primitive == PRIM_IPV4 && strcmp(prop_name, "default") == 0) {
                     if (!is_valid_ipv4(s)) {
                         *out_err = "invalid IPv4 address format";

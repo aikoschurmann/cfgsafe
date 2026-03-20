@@ -17,6 +17,12 @@ typedef enum {
     CFG_ERR_VALIDATION,
 } cfg_status_t;
 
+typedef struct {
+    char message[512];
+    char field[256];
+    size_t line;
+} cfg_error_t;
+
 typedef struct DatabaseConfig_t DatabaseConfig_t;
 typedef struct AuthConfig_t AuthConfig_t;
 typedef struct ApiGateway_t ApiGateway_t;
@@ -80,17 +86,17 @@ typedef struct ApiGateway_t {
     void* internal_pool;
 } ApiGateway_t;
 
-cfg_status_t DatabaseConfig_load(DatabaseConfig_t *cfg, const char *filename);
+cfg_status_t DatabaseConfig_load(DatabaseConfig_t *cfg, const char *filename, cfg_error_t *err);
 void DatabaseConfig_free(DatabaseConfig_t *cfg);
-bool DatabaseConfig_validate(const DatabaseConfig_t *cfg);
-cfg_status_t AuthConfig_load(AuthConfig_t *cfg, const char *filename);
+bool DatabaseConfig_validate(const DatabaseConfig_t *cfg, cfg_error_t *err);
+cfg_status_t AuthConfig_load(AuthConfig_t *cfg, const char *filename, cfg_error_t *err);
 void AuthConfig_free(AuthConfig_t *cfg);
-bool AuthConfig_validate(const AuthConfig_t *cfg);
-cfg_status_t ApiGateway_load(ApiGateway_t *cfg, const char *filename);
+bool AuthConfig_validate(const AuthConfig_t *cfg, cfg_error_t *err);
+cfg_status_t ApiGateway_load(ApiGateway_t *cfg, const char *filename, cfg_error_t *err);
 void ApiGateway_free(ApiGateway_t *cfg);
-bool ApiGateway_validate(const ApiGateway_t *cfg);
-bool logging_validate(const logging_t *cfg);
-bool caching_validate(const caching_t *cfg);
+bool ApiGateway_validate(const ApiGateway_t *cfg, cfg_error_t *err);
+bool logging_validate(const logging_t *cfg, cfg_error_t *err);
+bool caching_validate(const caching_t *cfg, cfg_error_t *err);
 
 #endif /* CONFIG_H */
 
@@ -182,9 +188,16 @@ static bool cfg_parse_ipv4(const char *s, cfg_ipv4_t *out) {
     return true;
 }
 
+static void cfg_set_error(cfg_error_t *err, const char *msg, const char *field, size_t line) {
+    if (!err) return;
+    if (msg) { strncpy(err->message, msg, sizeof(err->message) - 1); err->message[sizeof(err->message) - 1] = '\0'; }
+    if (field) { strncpy(err->field, field, sizeof(err->field) - 1); err->field[sizeof(err->field) - 1] = '\0'; }
+    err->line = line;
+}
+
 typedef void (*cfg_ini_cb)(void *user, const char *sec, const char *key, const char *val);
-static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, void *user) {
-    FILE *f = fopen(filename, "r"); if (!f) return CFG_ERR_OPEN_FILE;
+static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, void *user, cfg_error_t *err) {
+    FILE *f = fopen(filename, "r"); if (!f) { cfg_set_error(err, "failed to open file", filename, 0); return CFG_ERR_OPEN_FILE; }
     char line[4096], section[256] = "";
     size_t line_num = 0; bool success = true;
     while (fgets(line, sizeof(line), f)) {
@@ -197,7 +210,7 @@ static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, void *use
                 if (len >= sizeof(section)) len = sizeof(section) - 1;
                 strncpy(section, p + 1, len);
                 section[len] = '\0';
-            } else { fprintf(stderr, "INI Syntax Error: missing ']' at line %zu\n", line_num); success = false; }
+            } else { cfg_set_error(err, "missing closing bracket for section", section, line_num); success = false; }
         } else {
             char *eq = strchr(p, '=');
             if (eq) {
@@ -207,7 +220,7 @@ static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, void *use
                 char *v_end = val + strlen(val) - 1; while(v_end > val && isspace(*v_end)) *v_end-- = '\0';
                 cb(user, section, key, val);
             } else {
-                fprintf(stderr, "INI Syntax Error: missing '=' at line %zu\n", line_num); success = false;
+                cfg_set_error(err, "missing assignment operator", p, line_num); success = false;
             }
         }
     }
@@ -226,10 +239,10 @@ static bool cfg_pattern_0_match(const char *s) {
     return false;
 }
 
-bool DatabaseConfig_validate(const DatabaseConfig_t *cfg) {
+bool DatabaseConfig_validate(const DatabaseConfig_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
-    if (cfg->port < 1 || cfg->port > 65535) { fprintf(stderr, "Validation failed: port range check\n"); return false; }
-    if (cfg->pool_size < 1 || cfg->pool_size > 100) { fprintf(stderr, "Validation failed: pool_size range check\n"); return false; }
+    if (cfg->port < 1 || cfg->port > 65535) { cfg_set_error(err, "value out of range", "port", 0); return false; }
+    if (cfg->pool_size < 1 || cfg->pool_size > 100) { cfg_set_error(err, "value out of range", "pool_size", 0); return false; }
     return true;
 }
 
@@ -273,21 +286,22 @@ static void DatabaseConfig_ini_handler(void *user, const char *sec, const char *
     DatabaseConfig_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);
 }
 
-cfg_status_t DatabaseConfig_load(DatabaseConfig_t *cfg, const char *filename) {
+cfg_status_t DatabaseConfig_load(DatabaseConfig_t *cfg, const char *filename, cfg_error_t *err) {
     if (!cfg) return CFG_ERR_VALIDATION;
     memset(cfg, 0, sizeof(DatabaseConfig_t));
     cfg_common_context_t ctx = { cfg, NULL };
+    if (err) memset(err, 0, sizeof(cfg_error_t));
     cfg->driver = DatabaseConfig_driver_postgres;
     cfg->host = cfg_intern_string(&ctx, "localhost");
     cfg->port = 5432;
     cfg->pool_size = 10;
     if (filename) {
-        cfg_status_t status = cfg_parse_ini(filename, DatabaseConfig_ini_handler, &ctx);
+        cfg_status_t status = cfg_parse_ini(filename, DatabaseConfig_ini_handler, &ctx, err);
         if (status != CFG_SUCCESS) { cfg_pool_free(ctx.pool); return status; }
     }
     { const char *e = getenv("DB_HOST"); if (e) { cfg->host = cfg_intern_string(&ctx, e); } }
     cfg->internal_pool = ctx.pool;
-    if (!DatabaseConfig_validate(cfg)) { DatabaseConfig_free(cfg); return CFG_ERR_VALIDATION; }
+    if (!DatabaseConfig_validate(cfg, err)) { DatabaseConfig_free(cfg); return CFG_ERR_VALIDATION; }
     return CFG_SUCCESS;
 }
 
@@ -297,9 +311,9 @@ void DatabaseConfig_free(DatabaseConfig_t *cfg) {
     memset(cfg, 0, sizeof(DatabaseConfig_t));
 }
 
-bool AuthConfig_validate(const AuthConfig_t *cfg) {
+bool AuthConfig_validate(const AuthConfig_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
-    if (cfg->token_ttl < 60 || cfg->token_ttl > 86400) { fprintf(stderr, "Validation failed: token_ttl range check\n"); return false; }
+    if (cfg->token_ttl < 60 || cfg->token_ttl > 86400) { cfg_set_error(err, "value out of range", "token_ttl", 0); return false; }
     return true;
 }
 
@@ -339,19 +353,20 @@ static void AuthConfig_ini_handler(void *user, const char *sec, const char *key,
     AuthConfig_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);
 }
 
-cfg_status_t AuthConfig_load(AuthConfig_t *cfg, const char *filename) {
+cfg_status_t AuthConfig_load(AuthConfig_t *cfg, const char *filename, cfg_error_t *err) {
     if (!cfg) return CFG_ERR_VALIDATION;
     memset(cfg, 0, sizeof(AuthConfig_t));
     cfg_common_context_t ctx = { cfg, NULL };
+    if (err) memset(err, 0, sizeof(cfg_error_t));
     cfg->enabled = true;
     cfg->provider = AuthConfig_provider_jwt;
     cfg->token_ttl = 3600;
     if (filename) {
-        cfg_status_t status = cfg_parse_ini(filename, AuthConfig_ini_handler, &ctx);
+        cfg_status_t status = cfg_parse_ini(filename, AuthConfig_ini_handler, &ctx, err);
         if (status != CFG_SUCCESS) { cfg_pool_free(ctx.pool); return status; }
     }
     cfg->internal_pool = ctx.pool;
-    if (!AuthConfig_validate(cfg)) { AuthConfig_free(cfg); return CFG_ERR_VALIDATION; }
+    if (!AuthConfig_validate(cfg, err)) { AuthConfig_free(cfg); return CFG_ERR_VALIDATION; }
     return CFG_SUCCESS;
 }
 
@@ -361,35 +376,35 @@ void AuthConfig_free(AuthConfig_t *cfg) {
     memset(cfg, 0, sizeof(AuthConfig_t));
 }
 
-bool ApiGateway_validate(const ApiGateway_t *cfg) {
+bool ApiGateway_validate(const ApiGateway_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
-    if (cfg->service_name != NULL && strlen(cfg->service_name) < 3) { fprintf(stderr, "Validation failed: service_name min_length check\n"); return false; }
-    if (cfg->service_name != NULL && !cfg_pattern_0_match(cfg->service_name)) { fprintf(stderr, "Validation failed: service_name pattern match check\n"); return false; }
-    if (cfg->listen_port < 80 || cfg->listen_port > 9000) { fprintf(stderr, "Validation failed: listen_port range check\n"); return false; }
+    if (cfg->service_name != NULL && strlen(cfg->service_name) < 3) { cfg_set_error(err, "string too short", "service_name", 0); return false; }
+    if (cfg->service_name != NULL && !cfg_pattern_0_match(cfg->service_name)) { cfg_set_error(err, "pattern mismatch", "service_name", 0); return false; }
+    if (cfg->listen_port < 80 || cfg->listen_port > 9000) { cfg_set_error(err, "value out of range", "listen_port", 0); return false; }
     if (cfg->enable_tls == true) {
-        if (cfg->cert_path == NULL) { fprintf(stderr, "Validation failed: cert_path is required by condition\n"); return false; }
+        if (cfg->cert_path == NULL) { cfg_set_error(err, "field required by condition missing", "cert_path", 0); return false; }
     }
-    if (cfg->cert_path != NULL && !CFG_FILE_EXISTS(cfg->cert_path)) { fprintf(stderr, "Validation failed: cert_path file existence check\n"); return false; }
-    if (!DatabaseConfig_validate(&cfg->database)) return false;
-    if (!AuthConfig_validate(&cfg->auth)) return false;
-    if (!logging_validate(&cfg->logging)) return false;
-    if (!caching_validate(&cfg->caching)) return false;
+    if (cfg->cert_path != NULL && !CFG_FILE_EXISTS(cfg->cert_path)) { cfg_set_error(err, "file does not exist", "cert_path", 0); return false; }
+    if (!DatabaseConfig_validate(&cfg->database, err)) return false;
+    if (!AuthConfig_validate(&cfg->auth, err)) return false;
+    if (!logging_validate(&cfg->logging, err)) return false;
+    if (!caching_validate(&cfg->caching, err)) return false;
     return true;
 }
 
-bool logging_validate(const logging_t *cfg) {
+bool logging_validate(const logging_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
-    if (cfg->max_backups < 0 || cfg->max_backups > 100) { fprintf(stderr, "Validation failed: max_backups range check\n"); return false; }
+    if (cfg->max_backups < 0 || cfg->max_backups > 100) { cfg_set_error(err, "value out of range", "max_backups", 0); return false; }
     return true;
 }
 
-bool caching_validate(const caching_t *cfg) {
+bool caching_validate(const caching_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
-    if (cfg->nodes.count < 1) { fprintf(stderr, "Validation failed: nodes min_length check\n"); return false; }
+    if (cfg->nodes.count < 1) { cfg_set_error(err, "array too short", "nodes", 0); return false; }
     if (cfg->enabled == true) {
-        if (cfg->nodes.count == 0) { fprintf(stderr, "Validation failed: nodes is required by condition\n"); return false; }
+        if (cfg->nodes.count == 0) { cfg_set_error(err, "field required by condition missing", "nodes", 0); return false; }
     }
-    if (cfg->ttl < 0 || cfg->ttl > 3600) { fprintf(stderr, "Validation failed: ttl range check\n"); return false; }
+    if (cfg->ttl < 0 || cfg->ttl > 3600) { cfg_set_error(err, "value out of range", "ttl", 0); return false; }
     return true;
 }
 
@@ -516,10 +531,11 @@ static void ApiGateway_ini_handler(void *user, const char *sec, const char *key,
     ApiGateway_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);
 }
 
-cfg_status_t ApiGateway_load(ApiGateway_t *cfg, const char *filename) {
+cfg_status_t ApiGateway_load(ApiGateway_t *cfg, const char *filename, cfg_error_t *err) {
     if (!cfg) return CFG_ERR_VALIDATION;
     memset(cfg, 0, sizeof(ApiGateway_t));
     cfg_common_context_t ctx = { cfg, NULL };
+    if (err) memset(err, 0, sizeof(cfg_error_t));
     cfg->service_name = cfg_intern_string(&ctx, "edge-gateway");
     cfg_parse_ipv4("0.0.0.0", &cfg->bind_address);
     cfg->listen_port = 8080;
@@ -530,12 +546,12 @@ cfg_status_t ApiGateway_load(ApiGateway_t *cfg, const char *filename) {
     cfg->caching.enabled = false;
     cfg->caching.ttl = 300;
     if (filename) {
-        cfg_status_t status = cfg_parse_ini(filename, ApiGateway_ini_handler, &ctx);
+        cfg_status_t status = cfg_parse_ini(filename, ApiGateway_ini_handler, &ctx, err);
         if (status != CFG_SUCCESS) { cfg_pool_free(ctx.pool); return status; }
     }
     { const char *e = getenv("BIND_ADDR"); if (e) { cfg_parse_ipv4(e, &cfg->bind_address); } }
     cfg->internal_pool = ctx.pool;
-    if (!ApiGateway_validate(cfg)) { ApiGateway_free(cfg); return CFG_ERR_VALIDATION; }
+    if (!ApiGateway_validate(cfg, err)) { ApiGateway_free(cfg); return CFG_ERR_VALIDATION; }
     return CFG_SUCCESS;
 }
 
