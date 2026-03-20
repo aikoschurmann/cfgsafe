@@ -18,7 +18,7 @@ typedef struct {
     uint32_t len;     // length of the slice
 } Slice;
 
-static size_t slice_hash(void *p) {
+static inline size_t slice_hash(void *p) {
     Slice *s = (Slice*)p;
     size_t h = (size_t)1469598103934665603ULL; /* FNV-1a 64-bit */
     for (size_t i = 0; i < s->len; ++i) {
@@ -28,7 +28,7 @@ static size_t slice_hash(void *p) {
     return h;
 }
 
-static int slice_cmp(void *a, void *b) {
+static inline int slice_cmp(void *a, void *b) {
     Slice *sa = (Slice*)a;
     Slice *sb = (Slice*)b;
     if (sa->len != sb->len) return (sa->len < sb->len) ? -1 : 1;
@@ -40,12 +40,12 @@ static inline Span span_join(const Span *a, const Span *b) {
     return (Span){a->start_line, a->start_col, b->end_line, b->end_col};
 }
 
-static size_t ptr_identity_hash(void *p) {
+static inline size_t ptr_identity_hash(void *p) {
     // Hash the pointer value itself
     return (size_t)p;
 }
 
-static int ptr_identity_cmp(void *a, void *b) {
+static inline int ptr_identity_cmp(void *a, void *b) {
     // Compare pointer identity
     return (a > b) - (a < b);
 }

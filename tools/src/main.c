@@ -7,6 +7,7 @@
 #include "parser/parser.h"
 #include "parser/parse_statements.h"
 #include "typecheck/typecheck.h"
+#include "codegen/codegen.h"
 #include "datastructures/arena.h"
 #include "datastructures/utils.h"
 #include "file.h"
@@ -14,21 +15,24 @@
 int main(int argc, char const *argv[]) {
     bool print_ast_flag = false;
     const char *filename = NULL;
+    const char *output_filename = "config.h";
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--ast") == 0 || strcmp(argv[i], "-a") == 0) {
             print_ast_flag = true;
+        } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+            output_filename = argv[++i];
         } else if (argv[i][0] != '-') {
             filename = argv[i];
         } else {
             fprintf(stderr, "Unknown option: %s\n", argv[i]);
-            fprintf(stderr, "Usage: %s [--ast] <config_file.schema>\n", argv[0]);
+            fprintf(stderr, "Usage: %s [--ast] [-o <output.h>] <config_file.schema>\n", argv[0]);
             return 1;
         }
     }
 
     if (!filename) {
-        fprintf(stderr, "Usage: %s [--ast] <config_file.schema>\n", argv[0]);
+        fprintf(stderr, "Usage: %s [--ast] [-o <output.h>] <config_file.schema>\n", argv[0]);
         return 1;
     }
 
@@ -85,7 +89,20 @@ int main(int argc, char const *argv[]) {
         printf("--- AST for %s ---\n", filename);
         print_ast(program, 0, lexer->keywords, lexer->identifiers, lexer->strings);
     } else {
-        printf(COLOR_GREEN "success:" COLOR_RESET " '%s'\n", filename);
+        CodegenContext *cg_ctx = codegen_context_create(
+            arena,
+            program,
+            store,
+            lexer->identifiers,
+            lexer->keywords,
+            filename
+        );
+
+        if (codegen_generate_header(cg_ctx, output_filename)) {
+            printf(COLOR_GREEN "success:" COLOR_RESET " Generated '%s'\n", output_filename);
+        } else {
+            fprintf(stderr, COLOR_RED "error:" COLOR_RESET " Failed to generate '%s'\n", output_filename);
+        }
     }
 
     lexer_destroy(lexer);
