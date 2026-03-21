@@ -140,6 +140,10 @@ Validation rules are evaluated automatically by the generated `_load` function.
   ```scala
   cert_file: path { exists: true }
   ```
+* **`secret`**: Marks a field as sensitive. Values will be redacted when using the generated `_print` function.
+  ```scala
+  db_password: string { secret: true }
+  ```
 * **`required_if`**: Evaluates cross-field dependencies.
   ```scala
   use_tls: bool { default: false }

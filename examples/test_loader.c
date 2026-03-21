@@ -12,7 +12,7 @@ int main() {
     
     if (status == CFG_SUCCESS) {
         printf("Status: SUCCESS\n");
-        printf("Service Name: %s\n", cfg.service_name);
+        ApiGateway_print(&cfg, stdout);
         ApiGateway_free(&cfg);
     } else {
         printf("Status: FAILURE (code %d)\n", (int)status);

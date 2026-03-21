@@ -4,7 +4,7 @@ The `cfgsafe` generator (`cfg-gen`) produces a single-file C header library that
 
 ## STB-Style Single Header
 
-The generated code follows the STB single-header pattern. You must `#include` the file in all source files that need the types, but you must define `CONFIG_IMPLEMENTATION` in **exactly one** C file to emit the actual function definitions.
+The generated code follows the STB single-header pattern. You must `#include` the file in all source files accessorizing the types, but you must define `CONFIG_IMPLEMENTATION` in **exactly one** C file to emit the actual function definitions.
 
 ```c
 // config_impl.c
@@ -37,20 +37,32 @@ Each schema generates a standard set of procedures for lifecycle management.
 ### `[SchemaName]_load`
 
 ```c
-cfg_status_t ApiGateway_load(ApiGateway_t* cfg, const char* filepath, cfg_error_t* err);
+cfg_status_t [SchemaName]_load([SchemaName]_t* cfg, const char* filepath, cfg_error_t* err);
 ```
 
 **Parameters:**
 * `cfg`: Pointer to the uninitialized structurally-typed configuration object.
-* `filepath`: Path to the INI file to parse.
+* `filepath`: Path to the INI file to parse (optional, can be NULL to load only defaults and environment).
 * `err`: Pointer to an error struct to populate in case of failure.
 
 **Returns:** A `cfg_status_t` indicating the result of the load operation.
 
+### `[SchemaName]_print`
+
+```c
+void [SchemaName]_print(const [SchemaName]_t* cfg, FILE* f);
+```
+
+**Parameters:**
+* `cfg`: Pointer to a loaded configuration object.
+* `f`: File stream to print to (e.g., `stdout`, `stderr`, or a log file). If `NULL`, defaults to `stdout`.
+
+Recursively prints the configuration structure. Fields marked as `secret: true` in the schema will be redacted as `********`.
+
 ### `[SchemaName]_free`
 
 ```c
-void ApiGateway_free(ApiGateway_t* cfg);
+void [SchemaName]_free([SchemaName]_t* cfg);
 ```
 
 **Parameters:**

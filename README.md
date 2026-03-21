@@ -20,7 +20,7 @@ Stop writing boilerplate string-to-int parsing code. Stop silently ignoring inva
 * **Deep Validation**: First-class support for numeric `range`s, string `min_length`/`max_length`, regex `pattern` matching, and file `exists` checks.
 * **Conditional Logic**: Complex cross-field validation out of the box (e.g., `required_if: enable_tls == true`).
 * **Single-Header Output**: Generates one `.h` file containing both the data structures and the implementation logic.
-* **Environment Variables**: Native 12-factor app support. Seamlessly override file configuration keys with environment variables.
+* **Environment Variables**: Seamlessly override file configuration keys with environment variables. Great for deploying in Docker or modern cloud environments.
 
 ---
 
