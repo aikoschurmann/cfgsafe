@@ -1,0 +1,14 @@
+schema CommonConfig {
+    id: int { range: 1..1000 }
+    tag: string { default: "common" }
+}
+
+schema AppConfig {
+    name: string { required: true }
+    common: CommonConfig {}
+}
+
+schema ServerConfig {
+    port: int { default: 8080 }
+    common: CommonConfig {}
+}
