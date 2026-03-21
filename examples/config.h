@@ -7,10 +7,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-typedef struct {
-    uint8_t octets[4];
-} cfg_ipv4_t;
-
 typedef enum {
     CFG_SUCCESS = 0,
     CFG_ERR_OPEN_FILE,
@@ -23,6 +19,12 @@ typedef struct {
     char field[256];
     size_t line;
 } cfg_error_t;
+
+#include "validators.h"
+
+typedef struct {
+    uint8_t octets[4];
+} cfg_ipv4_t;
 
 typedef struct DatabaseConfig_t DatabaseConfig_t;
 typedef struct AuthConfig_t AuthConfig_t;
@@ -246,6 +248,7 @@ static bool cfg_pattern_0_match(const char *s) {
 
 bool DatabaseConfig_validate(const DatabaseConfig_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
+    if (!validate_db_name(cfg->host, err)) return false;
     if (cfg->port < 1 || cfg->port > 65535) { cfg_set_error(err, "value out of range", "port", 0); return false; }
     if (cfg->pool_size < 1 || cfg->pool_size > 100) { cfg_set_error(err, "value out of range", "pool_size", 0); return false; }
     return true;
@@ -304,10 +307,9 @@ static void DatabaseConfig_ini_handler(void *user, const char *sec, const char *
     char *token = strtok(sec_copy, ".");
     while(token && num_parts < 32) { parts[num_parts++] = token; token = strtok(NULL, "."); }
 
-    if (num_parts > 0 && strcmp(parts[0], "DatabaseConfig") == 0) {
-        for (int i = 0; i < num_parts - 1; i++) parts[i] = parts[i+1];
-        num_parts--;
-    }
+    if (num_parts == 0 || strcmp(parts[0], "DatabaseConfig") != 0) return;
+    for (int i = 0; i < num_parts - 1; i++) parts[i] = parts[i+1];
+    num_parts--;
 
     DatabaseConfig_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);
 }
@@ -384,10 +386,9 @@ static void AuthConfig_ini_handler(void *user, const char *sec, const char *key,
     char *token = strtok(sec_copy, ".");
     while(token && num_parts < 32) { parts[num_parts++] = token; token = strtok(NULL, "."); }
 
-    if (num_parts > 0 && strcmp(parts[0], "AuthConfig") == 0) {
-        for (int i = 0; i < num_parts - 1; i++) parts[i] = parts[i+1];
-        num_parts--;
-    }
+    if (num_parts == 0 || strcmp(parts[0], "AuthConfig") != 0) return;
+    for (int i = 0; i < num_parts - 1; i++) parts[i] = parts[i+1];
+    num_parts--;
 
     AuthConfig_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);
 }
@@ -621,10 +622,9 @@ static void ApiGateway_ini_handler(void *user, const char *sec, const char *key,
     char *token = strtok(sec_copy, ".");
     while(token && num_parts < 32) { parts[num_parts++] = token; token = strtok(NULL, "."); }
 
-    if (num_parts > 0 && strcmp(parts[0], "ApiGateway") == 0) {
-        for (int i = 0; i < num_parts - 1; i++) parts[i] = parts[i+1];
-        num_parts--;
-    }
+    if (num_parts == 0 || strcmp(parts[0], "ApiGateway") != 0) return;
+    for (int i = 0; i < num_parts - 1; i++) parts[i] = parts[i+1];
+    num_parts--;
 
     ApiGateway_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);
 }

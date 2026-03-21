@@ -1,151 +1,148 @@
 # Schema Definition Guide
 
-The `cfgsafe` schema language is a declarative format used to define the shape, types, defaults, and validation rules of your configuration. This file is parsed by the `cfg-gen` tool to produce a single-file C header.
+The `cfgsafe` schema language is a declarative DSL used to define hierarchical, strictly-typed configuration models. This guide provides an exhaustive reference for the syntax, semantics, and mapping rules.
 
-## Structure Overview
+---
 
-A schema file typically consists of `schema` blocks, which represent top-level configuration structures.
+## 1. Syntax Fundamentals
 
-```scala
-schema ServerConfig {
-    // fields and sections go here
-}
-```
+*   **Identifiers**: Field and schema names must start with a letter and contain only alphanumeric characters or underscores.
+*   **Separators**: Fields are defined as `name: type`. Property blocks are required for any field defining constraints or defaults.
+*   **Comments**: Use `//` for single-line or `/* */` for multi-line comments.
+*   **Imports**: Must appear at the top of the file using `import "header.h"`.
 
-## Data Types
+---
 
-`cfgsafe` provides a strict set of built-in data types that map directly to native C types.
+## 2. The Type System
 
-| Schema Type | C Equivalent | Description |
+`cfgsafe` maps schema types to native C99 types.
+
+### Primitives
+| Keyword | C99 Type | Description |
 | :--- | :--- | :--- |
-| `int` | `int64_t` | A signed 64-bit integer. |
-| `float` | `double` | A double-precision floating-point number. |
-| `bool` | `bool` | A boolean value (`true` or `false`). |
-| `string` | `const char*` | A dynamically allocated, interned text string. |
-| `path` | `const char*` | A file system path string. |
-| `ipv4` | `cfg_ipv4_t` | An IPv4 address struct (`uint8_t octets[4]`). |
+| `int` | `int64_t` | 64-bit signed integer. |
+| `float` | `double` | Double-precision floating point. |
+| `bool` | `bool` | Boolean (maps `true`/`false` or `1`/`0` from INI). |
+| `string` | `const char*` | UTF-8 string, interned in the internal memory pool. |
+| `path` | `const char*` | Same as `string`, but supports the `exists` constraint. |
+| `ipv4` | `cfg_ipv4_t` | A struct containing 4 `uint8_t` octets. |
 
-### Enumerations (`enum`)
+### Complex Types
 
-Enums map to native C enums. They restrict a field to a predefined set of string identifiers.
-
+#### Enumerations (`enum`)
+Restricts a field to a specific set of identifiers.
 ```scala
-schema Config {
-    log_level: enum(debug, info, warn, error) {
-        default: info
-    }
+level: enum(DEBUG, INFO, ERROR) { default: INFO }
+```
+*   **C Access**: `cfg.level == MySchema_level_DEBUG`. (Members are prefixed to avoid collisions).
+
+#### Arrays (`T[]`)
+Any type can be converted to an array.
+```scala
+tags: string[]
+```
+*   **C Struct**:
+    ```c
+    struct { T *data; size_t count; } tags;
+    ```
+*   **INI Format**: Comma-separated list: `tags = val1, val2, val3`.
+
+#### Schema Composition
+You can use a defined `schema` as a type for a field in another schema.
+```scala
+schema DB { host: string }
+schema App {
+    database: DB {}
 }
 ```
 
-### Arrays (`[]`)
+---
 
-Any base type can be converted into an array by appending `[]`. Arrays in the generated C code are represented as a pointer and a length field.
+## 3. Strict INI Mapping Rules
 
-```scala
-schema Config {
-    ip_allowlist: ipv4[]
-}
-```
-In C, this generates:
-```c
-const char** ip_allowlist;
-size_t ip_allowlist_len;
-```
+`cfgsafe` enforces a **strictly explicit** mapping between the schema and the `.ini` file.
 
-## Nesting and Mapping to INI Files
+### Rule 1: No Global Keys
+Every configuration key **must** reside inside a section. Keys at the very top of an INI file (global scope) are ignored.
 
-The underlying data format consumed by the generated parser is a standard INI file. `cfgsafe` enforces a strict one-to-one mapping between your schema and the loaded INI structures.
-
-* **Top-Level Fields:** Fields directly under the `schema` block map to global keys at the top of the `.ini` file (before any `[section]` is declared).
-* **Sections:** You can group fields logically using the `section` keyword. This maps to nested structures in C and maps directly to `[section_name]` headers in INI files.
-* **Deep Nesting:** If you place a `section` inside another `section` (or embed a schema inside a `section`), you use dot-notation in the INI file to map the structure (e.g. `[parent.child]`).
-* **Embedded Schemas:** Schemas embedded directly as field types behave exactly like a `section` named after the field variable.
+### Rule 2: Root Scoping
+Fields defined directly in a `schema` block must be placed in a section named exactly like that schema.
 
 **Schema:**
 ```scala
-schema Config {
-    service_name: string
+schema MyConfig {
+    version: int
+}
+```
+**Required INI:**
+```ini
+[MyConfig]
+version = 1
+```
 
-    section database {
-        host: string
+### Rule 3: Hierarchical Prefixing
+Sections and embedded schemas must be prefixed by their parent path using dot-notation.
+
+**Schema:**
+```scala
+schema App {
+    section network {
         port: int
-        
-        section pooling {
-            max_connections: int
-        }
     }
 }
 ```
-
-**Mapped INI File:**
+**Required INI:**
 ```ini
-service_name = "Auth Service"
-
-[database]
-host = "10.0.0.1"
-port = 5432
-
-[database.pooling]
-max_connections = 100
+[App.network]
+port = 8080
 ```
 
-### Embedded Schemas
+---
 
-Schemas can be reused by embedding them as field types.
+## 4. Property Reference
 
-```scala
-schema DatabaseConfig {
-    port: int
-}
+Properties are applied inside `{}` after the type.
 
-schema MainConfig {
-    primary_db: DatabaseConfig {}
-    replica_db: DatabaseConfig {}
-}
-```
+| Property | Applies To | Description |
+| :--- | :--- | :--- |
+| `default` | All | Fallback value if missing from INI and ENV. |
+| `env` | All | Environment variable name for overrides. |
+| `required` | All | Fails load if value is not provided by any source. |
+| `secret` | All | If `true`, redacts value in `_print()` output. |
+| `range` | `int`, `float`| Inclusive bounds: `range: 1..100`. |
+| `min_length`| `string`, `any[]`| Minimum characters or array element count. |
+| `max_length`| `string`, `any[]`| Maximum characters or array element count. |
+| `pattern` | `string` | Regex match (e.g. `"^[a-z]+$"`). |
+| `exists` | `path` | Validates file presence on the filesystem. |
+| `hook` | All | Name of custom C function for validation. |
 
-## Properties and Constraints
+---
 
-Fields can define behavior and constraints within a `{}` block.
+## 5. Precedence & Resolution
 
-### Default Values (`default`)
-Provides a fallback value if the key is missing from the configuration source and environment.
-```scala
-port: int { default: 8080 }
-```
+When `_load()` is called, the value for each field is determined in this order:
 
-### Environment Overrides (`env`)
-Binds a field to an environment variable. If the environment variable is present, it overrides all other values.
-```scala
-secret_key: string { env: "APP_SECRET_KEY" }
-```
+1.  **Environment Variable**: Highest priority. Only used if `env` property is set.
+2.  **INI File**: Read from the explicitly scoped section.
+3.  **Default**: Fallback from the schema definition.
 
-### Validation Constraints
+---
 
-Validation rules are evaluated automatically by the generated `_load` function.
+## 6. Custom Validation Hooks
 
-* **`range`**: Enforces a numeric boundary for `int` or `float` types.
-  ```scala
-  port: int { range: 1024..65535 }
-  ```
-* **`min_length` / `max_length`**: Constraints for `string`, `path`, or array types.
-  ```scala
-  username: string { min_length: 3, max_length: 32 }
-  ```
-* **`pattern`**: A regular expression applied to `string` fields.
-  ```scala
-  uuid: string { pattern: "^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$" }
-  ```
-* **`exists`**: Checks if a file or directory exists at parsing time (applies to `path`).
-  ```scala
-  cert_file: path { exists: true }
-  ```
-* **`secret`**: Marks a field as sensitive. Values will be redacted when using the generated `_print` function.
-  ```scala
-  db_password: string { secret: true }
-  ```
-* **`required_if`**: Evaluates cross-field dependencies.
-  ```scala
-  use_tls: bool { default: false }
-  cert: path { required_if: use_tls == true }
-  ```
+Hooks allow you to run C code during validation.
+**Signature**: `bool hook_name(const void *val, cfg_error_t *err);`
+
+| Target Type | Accessing `val` in C |
+| :--- | :--- |
+| `string`, `path` | `const char *s = (const char *)val;` (Direct value) |
+| `int` | `int64_t i = *(int64_t *)val;` (By address) |
+| `float` | `double d = *(double *)val;` (By address) |
+| `any[]` | `struct { T *data; size_t count; } *a = (void *)val;` |
+
+---
+
+## 7. Regex Support
+
+The built-in engine supports standard tokens: `^`, `$`, `.`, `[char-class]`, `[range]`, `[^negated]`, `+`, `*`, `?`.
+Example: `pattern: "^[A-F0-9]{8}$"`

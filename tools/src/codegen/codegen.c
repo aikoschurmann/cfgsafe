@@ -340,6 +340,18 @@ static void emit_validation_logic(UsageTracker *tracker, FILE *f, AstNode *field
                 emit_field_empty_check(f, field, prefix);
                 fprintf(f, ") { cfg_set_error(err, \"field required by condition missing\", \"%s\", 0); return false; }\n    }\n", fname);
             }
+        } else if (strcmp(pname, "hook") == 0) {
+            const char *hook_name = get_str(prop->value->data.literal.value.string_val);
+            AstType *type = &field->data.field_decl.type->data.ast_type;
+            bool is_str = (type->kind == AST_TYPE_PRIMITIVE && 
+                          (strcmp(get_str(type->u.primitive.name), "string") == 0 || 
+                           strcmp(get_str(type->u.primitive.name), "path") == 0));
+            
+            if (is_str) {
+                fprintf(f, "    if (!%s(%s%s, err)) return false;\n", hook_name, prefix, fname);
+            } else {
+                fprintf(f, "    if (!%s(&%s%s, err)) return false;\n", hook_name, prefix, fname);
+            }
         }
     }
 }
@@ -811,16 +823,8 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
     if (tracker.uses_int) fprintf(f, "#include <stdint.h>\n");
     if (tracker.uses_bool) fprintf(f, "#include <stdbool.h>\n");
     if (tracker.uses_size_t) fprintf(f, "#include <stddef.h>\n");
-    if (tracker.uses_int || tracker.uses_bool || tracker.uses_size_t) fprintf(f, "\n");
-
-    if (tracker.uses_ipv4) {
-        if (!tracker.uses_int) fprintf(f, "#include <stdint.h>\n");
-        fprintf(f, "typedef struct {\n");
-        fprintf(f, "    uint8_t octets[4];\n");
-        fprintf(f, "} cfg_ipv4_t;\n\n");
-    }
-
-    fprintf(f, "typedef enum {\n");
+    
+    fprintf(f, "\ntypedef enum {\n");
     fprintf(f, "    CFG_SUCCESS = 0,\n");
     fprintf(f, "    CFG_ERR_OPEN_FILE,\n");
     fprintf(f, "    CFG_ERR_SYNTAX,\n");
@@ -834,6 +838,21 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
     fprintf(f, "} cfg_error_t;\n\n");
 
     AstProgram *prog = &ctx->program->data.program;
+    if (prog->imports) {
+        for (size_t i = 0; i < prog->imports->count; i++) {
+            AstNode *imp = *(AstNode**)dynarray_get(prog->imports, i);
+            fprintf(f, "#include \"%s\"\n", get_str(imp->data.import_decl.path));
+        }
+    }
+
+    if (tracker.uses_int || tracker.uses_bool || tracker.uses_size_t || (prog->imports && prog->imports->count > 0)) fprintf(f, "\n");
+
+    if (tracker.uses_ipv4) {
+        if (!tracker.uses_int) fprintf(f, "#include <stdint.h>\n");
+        fprintf(f, "typedef struct {\n");
+        fprintf(f, "    uint8_t octets[4];\n");
+        fprintf(f, "} cfg_ipv4_t;\n\n");
+    }
 
     for (size_t i = 0; i < prog->schemas->count; i++) {
         AstNode *schema = *(AstNode**)dynarray_get(prog->schemas, i);
@@ -1007,10 +1026,9 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "    char *token = strtok(sec_copy, \".\");\n");
         fprintf(f, "    while(token && num_parts < 32) { parts[num_parts++] = token; token = strtok(NULL, \".\"); }\n\n");
 
-        fprintf(f, "    if (num_parts > 0 && strcmp(parts[0], \"%s\") == 0) {\n", schema_name);
-        fprintf(f, "        for (int i = 0; i < num_parts - 1; i++) parts[i] = parts[i+1];\n");
-        fprintf(f, "        num_parts--;\n");
-        fprintf(f, "    }\n\n");
+        fprintf(f, "    if (num_parts == 0 || strcmp(parts[0], \"%s\") != 0) return;\n", schema_name);
+        fprintf(f, "    for (int i = 0; i < num_parts - 1; i++) parts[i] = parts[i+1];\n");
+        fprintf(f, "    num_parts--;\n\n");
 
         fprintf(f, "    %s_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);\n", schema_name);
         fprintf(f, "}\n\n");

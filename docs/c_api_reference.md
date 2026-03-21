@@ -1,108 +1,105 @@
 # C API Reference
 
-The `cfgsafe` generator (`cfg-gen`) produces a single-file C header library that contains both your data structures and the implementation code needed to parse, validate, and free the configuration.
+The `cfgsafe` generator (`cfg-gen`) produces a single-file C header library containing strictly-typed data structures and lifecycle functions.
 
-## STB-Style Single Header
+---
 
-The generated code follows the STB single-header pattern. You must `#include` the file in all source files accessorizing the types, but you must define `CONFIG_IMPLEMENTATION` in **exactly one** C file to emit the actual function definitions.
+## Integration (STB-Style)
+
+The generated header follows the **STB single-header pattern**. 
+*   `#include "my_config.h"` in any file to access types.
+*   `#define CONFIG_IMPLEMENTATION` in **one** C source file before including to generate the implementation.
 
 ```c
-// config_impl.c
 #define CONFIG_IMPLEMENTATION
-#include "config.h"
+#include "my_config.h"
 ```
 
-## Generated Types structures
+---
 
-For every `schema Name` declared in your `.schema` file, `cfgsafe` generates a corresponding `Name_t` struct.
+## Life-Cycle Functions
+
+For every `schema Name` defined, `cfgsafe` generates four primary functions:
+
+### 1. `Name_load`
+The main entry point. Initializes the config, parses the INI, applies environment overrides, and runs validation.
 
 ```c
-typedef struct {
-    const char* service_name;
-    bool enable_tls;
+cfg_status_t Name_load(Name_t *cfg, const char *filename, cfg_error_t *err);
+```
+*   `cfg`: Pointer to the struct to populate.
+*   `filename`: Path to the `.ini` file. Pass `NULL` to skip file parsing and use only defaults/ENV.
+*   **Memory**: All strings and arrays are allocated in an internal pool.
+
+### 2. `Name_print`
+Recursively debug-prints the configuration to a file stream.
+
+```c
+void Name_print(const Name_t *cfg, FILE *f);
+```
+*   **Redaction**: Automatically replaces fields marked `secret: true` with `********`.
+
+### 3. `Name_free`
+Frees **all** memory allocated during `_load()` (interned strings and array data).
+
+```c
+void Name_free(Name_t *cfg);
+```
+*   Does not free the `cfg` pointer itself (allowing stack or custom heap allocation of the struct).
+
+### 4. `Name_validate`
+Internal validation pass. Can be called manually if you modify the struct fields at runtime.
+
+```c
+bool Name_validate(const Name_t *cfg, cfg_error_t *err);
+```
+
+---
+
+## Custom Validation Hooks
+
+Hooks are C functions triggered during the validation phase of `_load()`.
+
+**Schema Syntax:**
+```scala
+field: string { hook: "my_validator" }
+```
+
+**C Implementation:**
+```c
+bool my_validator(const void *val, cfg_error_t *err) {
+    // Strings are passed directly as values
+    const char *str = (const char*)val;
     
-    struct {
-        int64_t port;
-    } database;
+    // Primitives and arrays are passed by address
+    // int64_t i = *(int64_t*)val;
     
-    const char** nodes;
-    size_t nodes_len;
-} ApiGateway_t;
-```
-
-## Core Functions
-
-Each schema generates a standard set of procedures for lifecycle management.
-
-### `[SchemaName]_load`
-
-```c
-cfg_status_t [SchemaName]_load([SchemaName]_t* cfg, const char* filepath, cfg_error_t* err);
-```
-
-**Parameters:**
-* `cfg`: Pointer to the uninitialized structurally-typed configuration object.
-* `filepath`: Path to the INI file to parse (optional, can be NULL to load only defaults and environment).
-* `err`: Pointer to an error struct to populate in case of failure.
-
-**Returns:** A `cfg_status_t` indicating the result of the load operation.
-
-### `[SchemaName]_print`
-
-```c
-void [SchemaName]_print(const [SchemaName]_t* cfg, FILE* f);
-```
-
-**Parameters:**
-* `cfg`: Pointer to a loaded configuration object.
-* `f`: File stream to print to (e.g., `stdout`, `stderr`, or a log file). If `NULL`, defaults to `stdout`.
-
-Recursively prints the configuration structure. Fields marked as `secret: true` in the schema will be redacted as `********`.
-
-### `[SchemaName]_free`
-
-```c
-void [SchemaName]_free([SchemaName]_t* cfg);
-```
-
-**Parameters:**
-* `cfg`: Pointer to a previously loaded configuration object.
-
-Frees any heap-allocated memory associated with strings, paths, and arrays within the structure. Does not free the `cfg` pointer itself (allowing stack-allocated structs).
-
-## Status and Error Handling
-
-`cfgsafe` will never assert or crash your application on malformed data. Instead, it returns a status code and populates a detailed error object.
-
-### `cfg_status_t` Enum
-
-| Status Code | Value | Description |
-| :--- | :--- | :--- |
-| `CFG_SUCCESS` | `0` | Configuration was parsed and validated successfully. |
-| `CFG_ERR_OPEN_FILE` | `1` | The provided configuration file could not be opened. |
-| `CFG_ERR_SYNTAX` | `2` | The INI file has a syntax error. |
-| `CFG_ERR_VALIDATION` | `3` | A value failed validation (e.g. out of range, missing required field). |
-| `CFG_ERR_MEMORY` | `4` | An allocation failure occurred (OOM). |
-
-### `cfg_error_t` Struct
-
-When `_load` returns anything other than `CFG_SUCCESS`, the provided `cfg_error_t*` object is populated with detailed diagnostics.
-
-```c
-typedef struct {
-    char message[256]; // Human-readable error description
-    char field[128];   // The specific schema field that triggered the error
-    size_t line;       // The line number in the INI file (if applicable)
-} cfg_error_t;
-```
-
-**Example Error Handling:**
-```c
-cfg_error_t err;
-cfg_status_t result = ApiGateway_load(&cfg, "config.ini", &err);
-
-if (result == CFG_ERR_VALIDATION) {
-    fprintf(stderr, "Validation failed for field '%s': %s\n", err.field, err.message);
-    // e.g., Validation failed for field 'listen_port': Value 10000 exceeds maximum range 9000
+    if (/* fail condition */) {
+        if (err) strcpy(err->message, "Custom failure reason");
+        return false;
+    }
+    return true;
 }
+```
+
+---
+
+## Error Handling
+
+### `cfg_status_t`
+| Status | Meaning |
+| :--- | :--- |
+| `CFG_SUCCESS` | Load succeeded. |
+| `CFG_ERR_OPEN_FILE` | INI file not found or inaccessible. |
+| `CFG_ERR_SYNTAX` | Malformed INI syntax. |
+| `CFG_ERR_VALIDATION` | A constraint or hook failed. |
+
+### `cfg_error_t`
+Contains diagnostics when an error occurs.
+```c
+typedef struct {
+    char message[512]; // Description of the failure
+    char field[256];   // The dot-notated field path (e.g. "App.db.port")
+    size_t line;       // INI line number (if applicable)
+} cfg_error_t;
 ```

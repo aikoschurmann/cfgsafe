@@ -8,6 +8,7 @@ schema DatabaseConfig {
     host: string {
         default: "localhost"
         env: "DB_HOST"
+        hook: "validate_db_name"
     }
 
     password: string {
