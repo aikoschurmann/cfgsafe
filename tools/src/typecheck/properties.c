@@ -13,6 +13,7 @@ static const PropertyDef GENERIC_PROPS[] = {
     {"env", PROP_VAL_LITERAL, STRING_LITERAL},
     {"secret", PROP_VAL_LITERAL, BOOL_LITERAL},
     {"hook", PROP_VAL_LITERAL, STRING_LITERAL},
+    {"short", PROP_VAL_LITERAL, STRING_LITERAL},
 };
 
 static const PropertyDef NUMERIC_PROPS[] = {

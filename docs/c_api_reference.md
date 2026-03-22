@@ -22,16 +22,24 @@ The generated header follows the **STB single-header pattern**.
 For every `schema Name` defined, `cfgsafe` generates four primary functions:
 
 ### 1. `Name_load`
-The main entry point. Initializes the config, parses the INI, applies environment overrides, and runs validation.
+The main entry point. Initializes the config, parses the INI, applies environment overrides, parses CLI arguments natively, and finally runs validation.
 
 ```c
-cfg_status_t Name_load(Name_t *cfg, const char *filename, cfg_error_t *err);
+cfg_status_t Name_load(Name_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err);
 ```
 *   `cfg`: Pointer to the struct to populate.
-*   `filename`: Path to the `.ini` file. Pass `NULL` to skip file parsing and use only defaults/ENV.
-*   **Memory**: All strings and arrays are allocated in an internal pool.
+*   `filename`: Path to the `.ini` file. Pass `NULL` to skip file parsing and use only defaults/ENV/CLI.
+*   `argc`, `argv`: The standard main arguments. Pass `0, NULL` to disable CLI parsing.
+*   **Memory**: All strings, arrays, and paths are allocated internally. Calling `Name_free` wipes them all safely.
 
-### 2. `Name_print`
+### 2. `Name_parse_cli`
+A modular helper called internally by `_load`, but exposed strictly to parse `argc`/`argv` mapping directly to the nested structs (e.g. `--db.port 5432`).
+
+```c
+void Name_parse_cli(Name_t *cfg, int argc, const char **argv);
+```
+
+### 3. `Name_print`
 Recursively debug-prints the configuration to a file stream.
 
 ```c

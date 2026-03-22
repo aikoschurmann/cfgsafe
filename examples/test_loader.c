@@ -3,12 +3,13 @@
 #include <stdio.h>
 #include <string.h>
 
-int main() {
+int main(int argc, char **argv) {
     ApiGateway_t cfg;
     cfg_error_t err;
     
     printf("--- Loading Example Configuration ---\n");
-    cfg_status_t status = ApiGateway_load(&cfg, "config.ini", &err);
+    /* Passing argc and argv to enable CLI overrides (CLI > ENV > INI > Default) */
+    cfg_status_t status = ApiGateway_load(&cfg, "config.ini", argc, (const char**)argv, &err);
     
     if (status == CFG_SUCCESS) {
         printf("Status: SUCCESS\n");

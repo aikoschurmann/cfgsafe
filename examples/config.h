@@ -90,15 +90,18 @@ typedef struct ApiGateway_t {
     void* internal_pool;
 } ApiGateway_t;
 
-cfg_status_t DatabaseConfig_load(DatabaseConfig_t *cfg, const char *filename, cfg_error_t *err);
+cfg_status_t DatabaseConfig_load(DatabaseConfig_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err);
+void DatabaseConfig_parse_cli(DatabaseConfig_t *cfg, int argc, const char **argv);
 void DatabaseConfig_print(const DatabaseConfig_t *cfg, FILE *f);
 void DatabaseConfig_free(DatabaseConfig_t *cfg);
 bool DatabaseConfig_validate(const DatabaseConfig_t *cfg, cfg_error_t *err);
-cfg_status_t AuthConfig_load(AuthConfig_t *cfg, const char *filename, cfg_error_t *err);
+cfg_status_t AuthConfig_load(AuthConfig_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err);
+void AuthConfig_parse_cli(AuthConfig_t *cfg, int argc, const char **argv);
 void AuthConfig_print(const AuthConfig_t *cfg, FILE *f);
 void AuthConfig_free(AuthConfig_t *cfg);
 bool AuthConfig_validate(const AuthConfig_t *cfg, cfg_error_t *err);
-cfg_status_t ApiGateway_load(ApiGateway_t *cfg, const char *filename, cfg_error_t *err);
+cfg_status_t ApiGateway_load(ApiGateway_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err);
+void ApiGateway_parse_cli(ApiGateway_t *cfg, int argc, const char **argv);
 void ApiGateway_print(const ApiGateway_t *cfg, FILE *f);
 void ApiGateway_free(ApiGateway_t *cfg);
 bool ApiGateway_validate(const ApiGateway_t *cfg, cfg_error_t *err);
@@ -123,7 +126,6 @@ bool caching_validate(const caching_t *cfg, cfg_error_t *err);
 #define CFG_FILE_EXISTS(path) (access((path), F_OK) == 0)
 #endif
 #endif /* CFG_FILE_EXISTS */
-
 typedef struct cfg_pool_node {
     void *ptr;
     struct cfg_pool_node *next;
@@ -298,6 +300,80 @@ static void DatabaseConfig_ini_handler_recursive(cfg_common_context_t *ctx, cons
     }
 }
 
+static bool DatabaseConfig_parse_arg(cfg_common_context_t *ctx, int argc, const char **argv, int *index) {
+    int i = *index;
+    const char *arg = argv[i];
+    if (strcmp(arg, "--DatabaseConfig.driver") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            if (strcmp(val, "postgres") == 0) ((DatabaseConfig_t*)ctx->cfg)->driver = DatabaseConfig_driver_postgres;
+            else if (strcmp(val, "mysql") == 0) ((DatabaseConfig_t*)ctx->cfg)->driver = DatabaseConfig_driver_mysql;
+            else if (strcmp(val, "sqlite") == 0) ((DatabaseConfig_t*)ctx->cfg)->driver = DatabaseConfig_driver_sqlite;
+            *index = i; return true;
+        }
+    }
+    if (strcmp(arg, "--DatabaseConfig.host") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((DatabaseConfig_t*)ctx->cfg)->host = cfg_intern_string(ctx, val);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--DatabaseConfig.host=", 22) == 0) {
+        const char *val = arg + 22;
+        ((DatabaseConfig_t*)ctx->cfg)->host = cfg_intern_string(ctx, val);
+        return true;
+    }
+    if (strcmp(arg, "--DatabaseConfig.password") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((DatabaseConfig_t*)ctx->cfg)->password = cfg_intern_string(ctx, val);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--DatabaseConfig.password=", 26) == 0) {
+        const char *val = arg + 26;
+        ((DatabaseConfig_t*)ctx->cfg)->password = cfg_intern_string(ctx, val);
+        return true;
+    }
+    if (strcmp(arg, "--DatabaseConfig.port") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((DatabaseConfig_t*)ctx->cfg)->port = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--DatabaseConfig.port=", 22) == 0) {
+        const char *val = arg + 22;
+        ((DatabaseConfig_t*)ctx->cfg)->port = strtoll(val, NULL, 10);
+        return true;
+    }
+    if (strcmp(arg, "--DatabaseConfig.pool_size") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((DatabaseConfig_t*)ctx->cfg)->pool_size = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--DatabaseConfig.pool_size=", 27) == 0) {
+        const char *val = arg + 27;
+        ((DatabaseConfig_t*)ctx->cfg)->pool_size = strtoll(val, NULL, 10);
+        return true;
+    }
+    *index = i;
+    return false;
+}
+
+void DatabaseConfig_parse_cli(DatabaseConfig_t *cfg, int argc, const char **argv) {
+    if (!cfg || !argv || argc <= 1) return;
+    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool };
+    for (int i = 1; i < argc; i++) {
+        if (argv[i][0] != '-') continue;
+        DatabaseConfig_parse_arg(&ctx, argc, argv, &i);
+    }
+    cfg->internal_pool = ctx.pool;
+}
+
 static void DatabaseConfig_ini_handler(void *user, const char *sec, const char *key, const char *val) {
     cfg_common_context_t *ctx = (cfg_common_context_t*)user;
     char sec_copy[256];
@@ -314,7 +390,7 @@ static void DatabaseConfig_ini_handler(void *user, const char *sec, const char *
     DatabaseConfig_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);
 }
 
-cfg_status_t DatabaseConfig_load(DatabaseConfig_t *cfg, const char *filename, cfg_error_t *err) {
+cfg_status_t DatabaseConfig_load(DatabaseConfig_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err) {
     if (!cfg) return CFG_ERR_VALIDATION;
     memset(cfg, 0, sizeof(DatabaseConfig_t));
     cfg_common_context_t ctx = { cfg, NULL };
@@ -329,6 +405,7 @@ cfg_status_t DatabaseConfig_load(DatabaseConfig_t *cfg, const char *filename, cf
     }
     { const char *e = getenv("DB_HOST"); if (e) { cfg->host = cfg_intern_string(&ctx, e); } }
     cfg->internal_pool = ctx.pool;
+    DatabaseConfig_parse_cli(cfg, argc, argv);
     if (!DatabaseConfig_validate(cfg, err)) { DatabaseConfig_free(cfg); return CFG_ERR_VALIDATION; }
     return CFG_SUCCESS;
 }
@@ -377,6 +454,47 @@ static void AuthConfig_ini_handler_recursive(cfg_common_context_t *ctx, const ch
     }
 }
 
+static bool AuthConfig_parse_arg(cfg_common_context_t *ctx, int argc, const char **argv, int *index) {
+    int i = *index;
+    const char *arg = argv[i];
+    if (strcmp(arg, "--AuthConfig.enabled") == 0) {
+        ((AuthConfig_t*)ctx->cfg)->enabled = true; return true;
+    }
+    if (strcmp(arg, "--AuthConfig.provider") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            if (strcmp(val, "jwt") == 0) ((AuthConfig_t*)ctx->cfg)->provider = AuthConfig_provider_jwt;
+            else if (strcmp(val, "oauth2") == 0) ((AuthConfig_t*)ctx->cfg)->provider = AuthConfig_provider_oauth2;
+            else if (strcmp(val, "basic") == 0) ((AuthConfig_t*)ctx->cfg)->provider = AuthConfig_provider_basic;
+            *index = i; return true;
+        }
+    }
+    if (strcmp(arg, "--AuthConfig.token_ttl") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((AuthConfig_t*)ctx->cfg)->token_ttl = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--AuthConfig.token_ttl=", 23) == 0) {
+        const char *val = arg + 23;
+        ((AuthConfig_t*)ctx->cfg)->token_ttl = strtoll(val, NULL, 10);
+        return true;
+    }
+    *index = i;
+    return false;
+}
+
+void AuthConfig_parse_cli(AuthConfig_t *cfg, int argc, const char **argv) {
+    if (!cfg || !argv || argc <= 1) return;
+    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool };
+    for (int i = 1; i < argc; i++) {
+        if (argv[i][0] != '-') continue;
+        AuthConfig_parse_arg(&ctx, argc, argv, &i);
+    }
+    cfg->internal_pool = ctx.pool;
+}
+
 static void AuthConfig_ini_handler(void *user, const char *sec, const char *key, const char *val) {
     cfg_common_context_t *ctx = (cfg_common_context_t*)user;
     char sec_copy[256];
@@ -393,7 +511,7 @@ static void AuthConfig_ini_handler(void *user, const char *sec, const char *key,
     AuthConfig_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);
 }
 
-cfg_status_t AuthConfig_load(AuthConfig_t *cfg, const char *filename, cfg_error_t *err) {
+cfg_status_t AuthConfig_load(AuthConfig_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err) {
     if (!cfg) return CFG_ERR_VALIDATION;
     memset(cfg, 0, sizeof(AuthConfig_t));
     cfg_common_context_t ctx = { cfg, NULL };
@@ -406,6 +524,7 @@ cfg_status_t AuthConfig_load(AuthConfig_t *cfg, const char *filename, cfg_error_
         if (status != CFG_SUCCESS) { cfg_pool_free(ctx.pool); return status; }
     }
     cfg->internal_pool = ctx.pool;
+    AuthConfig_parse_cli(cfg, argc, argv);
     if (!AuthConfig_validate(cfg, err)) { AuthConfig_free(cfg); return CFG_ERR_VALIDATION; }
     return CFG_SUCCESS;
 }
@@ -613,6 +732,210 @@ static void ApiGateway_ini_handler_recursive(cfg_common_context_t *ctx, const ch
     }
 }
 
+static bool ApiGateway_parse_arg(cfg_common_context_t *ctx, int argc, const char **argv, int *index) {
+    int i = *index;
+    const char *arg = argv[i];
+    if (strcmp(arg, "--ApiGateway.service_name") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((ApiGateway_t*)ctx->cfg)->service_name = cfg_intern_string(ctx, val);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--ApiGateway.service_name=", 26) == 0) {
+        const char *val = arg + 26;
+        ((ApiGateway_t*)ctx->cfg)->service_name = cfg_intern_string(ctx, val);
+        return true;
+    }
+    if (strcmp(arg, "--ApiGateway.bind_address") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            cfg_parse_ipv4(val, &((ApiGateway_t*)ctx->cfg)->bind_address);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--ApiGateway.bind_address=", 26) == 0) {
+        const char *val = arg + 26;
+        cfg_parse_ipv4(val, &((ApiGateway_t*)ctx->cfg)->bind_address);
+        return true;
+    }
+    if (strcmp(arg, "--ApiGateway.listen_port") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((ApiGateway_t*)ctx->cfg)->listen_port = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--ApiGateway.listen_port=", 25) == 0) {
+        const char *val = arg + 25;
+        ((ApiGateway_t*)ctx->cfg)->listen_port = strtoll(val, NULL, 10);
+        return true;
+    }
+    if (strcmp(arg, "--ApiGateway.enable_tls") == 0) {
+        ((ApiGateway_t*)ctx->cfg)->enable_tls = true; return true;
+    }
+    if (strcmp(arg, "--ApiGateway.cert_path") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((ApiGateway_t*)ctx->cfg)->cert_path = cfg_intern_string(ctx, val);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--ApiGateway.cert_path=", 23) == 0) {
+        const char *val = arg + 23;
+        ((ApiGateway_t*)ctx->cfg)->cert_path = cfg_intern_string(ctx, val);
+        return true;
+    }
+    if (strcmp(arg, "--ApiGateway.database.driver") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            if (strcmp(val, "postgres") == 0) ((ApiGateway_t*)ctx->cfg)->database.driver = DatabaseConfig_driver_postgres;
+            else if (strcmp(val, "mysql") == 0) ((ApiGateway_t*)ctx->cfg)->database.driver = DatabaseConfig_driver_mysql;
+            else if (strcmp(val, "sqlite") == 0) ((ApiGateway_t*)ctx->cfg)->database.driver = DatabaseConfig_driver_sqlite;
+            *index = i; return true;
+        }
+    }
+    if (strcmp(arg, "--ApiGateway.database.host") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((ApiGateway_t*)ctx->cfg)->database.host = cfg_intern_string(ctx, val);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--ApiGateway.database.host=", 27) == 0) {
+        const char *val = arg + 27;
+        ((ApiGateway_t*)ctx->cfg)->database.host = cfg_intern_string(ctx, val);
+        return true;
+    }
+    if (strcmp(arg, "--ApiGateway.database.password") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((ApiGateway_t*)ctx->cfg)->database.password = cfg_intern_string(ctx, val);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--ApiGateway.database.password=", 31) == 0) {
+        const char *val = arg + 31;
+        ((ApiGateway_t*)ctx->cfg)->database.password = cfg_intern_string(ctx, val);
+        return true;
+    }
+    if (strcmp(arg, "--ApiGateway.database.port") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((ApiGateway_t*)ctx->cfg)->database.port = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--ApiGateway.database.port=", 27) == 0) {
+        const char *val = arg + 27;
+        ((ApiGateway_t*)ctx->cfg)->database.port = strtoll(val, NULL, 10);
+        return true;
+    }
+    if (strcmp(arg, "--ApiGateway.database.pool_size") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((ApiGateway_t*)ctx->cfg)->database.pool_size = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--ApiGateway.database.pool_size=", 32) == 0) {
+        const char *val = arg + 32;
+        ((ApiGateway_t*)ctx->cfg)->database.pool_size = strtoll(val, NULL, 10);
+        return true;
+    }
+    if (strcmp(arg, "--ApiGateway.auth.enabled") == 0) {
+        ((ApiGateway_t*)ctx->cfg)->auth.enabled = true; return true;
+    }
+    if (strcmp(arg, "--ApiGateway.auth.provider") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            if (strcmp(val, "jwt") == 0) ((ApiGateway_t*)ctx->cfg)->auth.provider = AuthConfig_provider_jwt;
+            else if (strcmp(val, "oauth2") == 0) ((ApiGateway_t*)ctx->cfg)->auth.provider = AuthConfig_provider_oauth2;
+            else if (strcmp(val, "basic") == 0) ((ApiGateway_t*)ctx->cfg)->auth.provider = AuthConfig_provider_basic;
+            *index = i; return true;
+        }
+    }
+    if (strcmp(arg, "--ApiGateway.auth.token_ttl") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((ApiGateway_t*)ctx->cfg)->auth.token_ttl = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--ApiGateway.auth.token_ttl=", 28) == 0) {
+        const char *val = arg + 28;
+        ((ApiGateway_t*)ctx->cfg)->auth.token_ttl = strtoll(val, NULL, 10);
+        return true;
+    }
+    if (strcmp(arg, "--ApiGateway.logging.level") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            if (strcmp(val, "debug") == 0) ((ApiGateway_t*)ctx->cfg)->logging.level = logging_level_debug;
+            else if (strcmp(val, "info") == 0) ((ApiGateway_t*)ctx->cfg)->logging.level = logging_level_info;
+            else if (strcmp(val, "warn") == 0) ((ApiGateway_t*)ctx->cfg)->logging.level = logging_level_warn;
+            else if (strcmp(val, "error") == 0) ((ApiGateway_t*)ctx->cfg)->logging.level = logging_level_error;
+            *index = i; return true;
+        }
+    }
+    if (strcmp(arg, "--ApiGateway.logging.file_path") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((ApiGateway_t*)ctx->cfg)->logging.file_path = cfg_intern_string(ctx, val);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--ApiGateway.logging.file_path=", 31) == 0) {
+        const char *val = arg + 31;
+        ((ApiGateway_t*)ctx->cfg)->logging.file_path = cfg_intern_string(ctx, val);
+        return true;
+    }
+    if (strcmp(arg, "--ApiGateway.logging.max_backups") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((ApiGateway_t*)ctx->cfg)->logging.max_backups = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--ApiGateway.logging.max_backups=", 33) == 0) {
+        const char *val = arg + 33;
+        ((ApiGateway_t*)ctx->cfg)->logging.max_backups = strtoll(val, NULL, 10);
+        return true;
+    }
+    if (strcmp(arg, "--ApiGateway.caching.enabled") == 0) {
+        ((ApiGateway_t*)ctx->cfg)->caching.enabled = true; return true;
+    }
+    if (strcmp(arg, "--ApiGateway.caching.nodes") == 0) {
+        if (i + 1 < argc) {
+            cfg_parse_array(ctx, argv[++i], (void**)&((ApiGateway_t*)ctx->cfg)->caching.nodes.data, &((ApiGateway_t*)ctx->cfg)->caching.nodes.count);
+            *index = i; return true;
+        }
+    }
+    if (strcmp(arg, "--ApiGateway.caching.ttl") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((ApiGateway_t*)ctx->cfg)->caching.ttl = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--ApiGateway.caching.ttl=", 25) == 0) {
+        const char *val = arg + 25;
+        ((ApiGateway_t*)ctx->cfg)->caching.ttl = strtoll(val, NULL, 10);
+        return true;
+    }
+    *index = i;
+    return false;
+}
+
+void ApiGateway_parse_cli(ApiGateway_t *cfg, int argc, const char **argv) {
+    if (!cfg || !argv || argc <= 1) return;
+    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool };
+    for (int i = 1; i < argc; i++) {
+        if (argv[i][0] != '-') continue;
+        ApiGateway_parse_arg(&ctx, argc, argv, &i);
+    }
+    cfg->internal_pool = ctx.pool;
+}
+
 static void ApiGateway_ini_handler(void *user, const char *sec, const char *key, const char *val) {
     cfg_common_context_t *ctx = (cfg_common_context_t*)user;
     char sec_copy[256];
@@ -629,7 +952,7 @@ static void ApiGateway_ini_handler(void *user, const char *sec, const char *key,
     ApiGateway_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);
 }
 
-cfg_status_t ApiGateway_load(ApiGateway_t *cfg, const char *filename, cfg_error_t *err) {
+cfg_status_t ApiGateway_load(ApiGateway_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err) {
     if (!cfg) return CFG_ERR_VALIDATION;
     memset(cfg, 0, sizeof(ApiGateway_t));
     cfg_common_context_t ctx = { cfg, NULL };
@@ -657,6 +980,7 @@ cfg_status_t ApiGateway_load(ApiGateway_t *cfg, const char *filename, cfg_error_
     { const char *e = getenv("BIND_ADDR"); if (e) { cfg_parse_ipv4(e, &cfg->bind_address); } }
     { const char *e = getenv("DB_HOST"); if (e) { cfg->database.host = cfg_intern_string(&ctx, e); } }
     cfg->internal_pool = ctx.pool;
+    ApiGateway_parse_cli(cfg, argc, argv);
     if (!ApiGateway_validate(cfg, err)) { ApiGateway_free(cfg); return CFG_ERR_VALIDATION; }
     return CFG_SUCCESS;
 }

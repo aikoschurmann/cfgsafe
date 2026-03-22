@@ -91,11 +91,13 @@ typedef struct EdgeCaseTest_t {
     void* internal_pool;
 } EdgeCaseTest_t;
 
-cfg_status_t NestedConfig_load(NestedConfig_t *cfg, const char *filename, cfg_error_t *err);
+cfg_status_t NestedConfig_load(NestedConfig_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err);
+void NestedConfig_parse_cli(NestedConfig_t *cfg, int argc, const char **argv);
 void NestedConfig_print(const NestedConfig_t *cfg, FILE *f);
 void NestedConfig_free(NestedConfig_t *cfg);
 bool NestedConfig_validate(const NestedConfig_t *cfg, cfg_error_t *err);
-cfg_status_t TestSuite_load(TestSuite_t *cfg, const char *filename, cfg_error_t *err);
+cfg_status_t TestSuite_load(TestSuite_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err);
+void TestSuite_parse_cli(TestSuite_t *cfg, int argc, const char **argv);
 void TestSuite_print(const TestSuite_t *cfg, FILE *f);
 void TestSuite_free(TestSuite_t *cfg);
 bool TestSuite_validate(const TestSuite_t *cfg, cfg_error_t *err);
@@ -103,7 +105,8 @@ bool level1_validate(const level1_t *cfg, cfg_error_t *err);
 bool level2_validate(const level2_t *cfg, cfg_error_t *err);
 bool level3_validate(const level3_t *cfg, cfg_error_t *err);
 bool level4_validate(const level4_t *cfg, cfg_error_t *err);
-cfg_status_t EdgeCaseTest_load(EdgeCaseTest_t *cfg, const char *filename, cfg_error_t *err);
+cfg_status_t EdgeCaseTest_load(EdgeCaseTest_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err);
+void EdgeCaseTest_parse_cli(EdgeCaseTest_t *cfg, int argc, const char **argv);
 void EdgeCaseTest_print(const EdgeCaseTest_t *cfg, FILE *f);
 void EdgeCaseTest_free(EdgeCaseTest_t *cfg);
 bool EdgeCaseTest_validate(const EdgeCaseTest_t *cfg, cfg_error_t *err);
@@ -279,6 +282,38 @@ static void NestedConfig_ini_handler_recursive(cfg_common_context_t *ctx, const 
     }
 }
 
+static bool NestedConfig_parse_arg(cfg_common_context_t *ctx, int argc, const char **argv, int *index) {
+    int i = *index;
+    const char *arg = argv[i];
+    if (strcmp(arg, "--NestedConfig.nested_id") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((NestedConfig_t*)ctx->cfg)->nested_id = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--NestedConfig.nested_id=", 25) == 0) {
+        const char *val = arg + 25;
+        ((NestedConfig_t*)ctx->cfg)->nested_id = strtoll(val, NULL, 10);
+        return true;
+    }
+    if (strcmp(arg, "--NestedConfig.active") == 0 || (arg[0] == '-' && arg[1] == 'a' && arg[2] == '\0')) {
+        ((NestedConfig_t*)ctx->cfg)->active = true; return true;
+    }
+    *index = i;
+    return false;
+}
+
+void NestedConfig_parse_cli(NestedConfig_t *cfg, int argc, const char **argv) {
+    if (!cfg || !argv || argc <= 1) return;
+    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool };
+    for (int i = 1; i < argc; i++) {
+        if (argv[i][0] != '-') continue;
+        NestedConfig_parse_arg(&ctx, argc, argv, &i);
+    }
+    cfg->internal_pool = ctx.pool;
+}
+
 static void NestedConfig_ini_handler(void *user, const char *sec, const char *key, const char *val) {
     cfg_common_context_t *ctx = (cfg_common_context_t*)user;
     char sec_copy[256];
@@ -295,7 +330,7 @@ static void NestedConfig_ini_handler(void *user, const char *sec, const char *ke
     NestedConfig_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);
 }
 
-cfg_status_t NestedConfig_load(NestedConfig_t *cfg, const char *filename, cfg_error_t *err) {
+cfg_status_t NestedConfig_load(NestedConfig_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err) {
     if (!cfg) return CFG_ERR_VALIDATION;
     memset(cfg, 0, sizeof(NestedConfig_t));
     cfg_common_context_t ctx = { cfg, NULL };
@@ -307,6 +342,7 @@ cfg_status_t NestedConfig_load(NestedConfig_t *cfg, const char *filename, cfg_er
         if (status != CFG_SUCCESS) { cfg_pool_free(ctx.pool); return status; }
     }
     cfg->internal_pool = ctx.pool;
+    NestedConfig_parse_cli(cfg, argc, argv);
     if (!NestedConfig_validate(cfg, err)) { NestedConfig_free(cfg); return CFG_ERR_VALIDATION; }
     return CFG_SUCCESS;
 }
@@ -455,6 +491,126 @@ static void TestSuite_ini_handler_recursive(cfg_common_context_t *ctx, const cha
     }
 }
 
+static bool TestSuite_parse_arg(cfg_common_context_t *ctx, int argc, const char **argv, int *index) {
+    int i = *index;
+    const char *arg = argv[i];
+    if (strcmp(arg, "--TestSuite.project_name") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((TestSuite_t*)ctx->cfg)->project_name = cfg_intern_string(ctx, val);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--TestSuite.project_name=", 25) == 0) {
+        const char *val = arg + 25;
+        ((TestSuite_t*)ctx->cfg)->project_name = cfg_intern_string(ctx, val);
+        return true;
+    }
+    if (strcmp(arg, "--TestSuite.version") == 0 || (arg[0] == '-' && arg[1] == 'v' && arg[2] == '\0')) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((TestSuite_t*)ctx->cfg)->version = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--TestSuite.version=", 20) == 0) {
+        const char *val = arg + 20;
+        ((TestSuite_t*)ctx->cfg)->version = strtoll(val, NULL, 10);
+        return true;
+    }
+    if (strcmp(arg, "--TestSuite.api_key") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((TestSuite_t*)ctx->cfg)->api_key = cfg_intern_string(ctx, val);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--TestSuite.api_key=", 20) == 0) {
+        const char *val = arg + 20;
+        ((TestSuite_t*)ctx->cfg)->api_key = cfg_intern_string(ctx, val);
+        return true;
+    }
+    if (strcmp(arg, "--TestSuite.level1.factor") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((TestSuite_t*)ctx->cfg)->level1.factor = strtod(val, NULL);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--TestSuite.level1.factor=", 26) == 0) {
+        const char *val = arg + 26;
+        ((TestSuite_t*)ctx->cfg)->level1.factor = strtod(val, NULL);
+        return true;
+    }
+    if (strcmp(arg, "--TestSuite.level1.level2.bind_addr") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            cfg_parse_ipv4(val, &((TestSuite_t*)ctx->cfg)->level1.level2.bind_addr);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--TestSuite.level1.level2.bind_addr=", 36) == 0) {
+        const char *val = arg + 36;
+        cfg_parse_ipv4(val, &((TestSuite_t*)ctx->cfg)->level1.level2.bind_addr);
+        return true;
+    }
+    if (strcmp(arg, "--TestSuite.level1.level2.level3.debug_mode") == 0) {
+        ((TestSuite_t*)ctx->cfg)->level1.level2.level3.debug_mode = true; return true;
+    }
+    if (strcmp(arg, "--TestSuite.level1.level2.level3.log_file") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((TestSuite_t*)ctx->cfg)->level1.level2.level3.log_file = cfg_intern_string(ctx, val);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--TestSuite.level1.level2.level3.log_file=", 42) == 0) {
+        const char *val = arg + 42;
+        ((TestSuite_t*)ctx->cfg)->level1.level2.level3.log_file = cfg_intern_string(ctx, val);
+        return true;
+    }
+    if (strcmp(arg, "--TestSuite.level1.level2.level3.level4.depth") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((TestSuite_t*)ctx->cfg)->level1.level2.level3.level4.depth = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--TestSuite.level1.level2.level3.level4.depth=", 46) == 0) {
+        const char *val = arg + 46;
+        ((TestSuite_t*)ctx->cfg)->level1.level2.level3.level4.depth = strtoll(val, NULL, 10);
+        return true;
+    }
+    if (strcmp(arg, "--TestSuite.level1.level2.level3.level4.tags") == 0) {
+        if (i + 1 < argc) {
+            cfg_parse_array(ctx, argv[++i], (void**)&((TestSuite_t*)ctx->cfg)->level1.level2.level3.level4.tags.data, &((TestSuite_t*)ctx->cfg)->level1.level2.level3.level4.tags.count);
+            *index = i; return true;
+        }
+    }
+    if (strcmp(arg, "--TestSuite.global_level") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            if (strcmp(val, "DEBUG") == 0) ((TestSuite_t*)ctx->cfg)->global_level = TestSuite_global_level_DEBUG;
+            else if (strcmp(val, "INFO") == 0) ((TestSuite_t*)ctx->cfg)->global_level = TestSuite_global_level_INFO;
+            else if (strcmp(val, "WARN") == 0) ((TestSuite_t*)ctx->cfg)->global_level = TestSuite_global_level_WARN;
+            else if (strcmp(val, "ERROR") == 0) ((TestSuite_t*)ctx->cfg)->global_level = TestSuite_global_level_ERROR;
+            *index = i; return true;
+        }
+    }
+    *index = i;
+    return false;
+}
+
+void TestSuite_parse_cli(TestSuite_t *cfg, int argc, const char **argv) {
+    if (!cfg || !argv || argc <= 1) return;
+    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool };
+    for (int i = 1; i < argc; i++) {
+        if (argv[i][0] != '-') continue;
+        TestSuite_parse_arg(&ctx, argc, argv, &i);
+    }
+    cfg->internal_pool = ctx.pool;
+}
+
 static void TestSuite_ini_handler(void *user, const char *sec, const char *key, const char *val) {
     cfg_common_context_t *ctx = (cfg_common_context_t*)user;
     char sec_copy[256];
@@ -471,7 +627,7 @@ static void TestSuite_ini_handler(void *user, const char *sec, const char *key, 
     TestSuite_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);
 }
 
-cfg_status_t TestSuite_load(TestSuite_t *cfg, const char *filename, cfg_error_t *err) {
+cfg_status_t TestSuite_load(TestSuite_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err) {
     if (!cfg) return CFG_ERR_VALIDATION;
     memset(cfg, 0, sizeof(TestSuite_t));
     cfg_common_context_t ctx = { cfg, NULL };
@@ -489,6 +645,7 @@ cfg_status_t TestSuite_load(TestSuite_t *cfg, const char *filename, cfg_error_t 
     }
     { const char *e = getenv("BIND_ADDR"); if (e) { cfg_parse_ipv4(e, &cfg->level1.level2.bind_addr); } }
     cfg->internal_pool = ctx.pool;
+    TestSuite_parse_cli(cfg, argc, argv);
     if (!TestSuite_validate(cfg, err)) { TestSuite_free(cfg); return CFG_ERR_VALIDATION; }
     return CFG_SUCCESS;
 }
@@ -608,6 +765,104 @@ static void EdgeCaseTest_ini_handler_recursive(cfg_common_context_t *ctx, const 
     }
 }
 
+static bool EdgeCaseTest_parse_arg(cfg_common_context_t *ctx, int argc, const char **argv, int *index) {
+    int i = *index;
+    const char *arg = argv[i];
+    if (strcmp(arg, "--EdgeCaseTest.empty_str") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((EdgeCaseTest_t*)ctx->cfg)->empty_str = cfg_intern_string(ctx, val);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--EdgeCaseTest.empty_str=", 25) == 0) {
+        const char *val = arg + 25;
+        ((EdgeCaseTest_t*)ctx->cfg)->empty_str = cfg_intern_string(ctx, val);
+        return true;
+    }
+    if (strcmp(arg, "--EdgeCaseTest.space_str") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((EdgeCaseTest_t*)ctx->cfg)->space_str = cfg_intern_string(ctx, val);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--EdgeCaseTest.space_str=", 25) == 0) {
+        const char *val = arg + 25;
+        ((EdgeCaseTest_t*)ctx->cfg)->space_str = cfg_intern_string(ctx, val);
+        return true;
+    }
+    if (strcmp(arg, "--EdgeCaseTest.flag_true") == 0) {
+        ((EdgeCaseTest_t*)ctx->cfg)->flag_true = true; return true;
+    }
+    if (strcmp(arg, "--EdgeCaseTest.flag_1") == 0) {
+        ((EdgeCaseTest_t*)ctx->cfg)->flag_1 = true; return true;
+    }
+    if (strcmp(arg, "--EdgeCaseTest.flag_false") == 0) {
+        ((EdgeCaseTest_t*)ctx->cfg)->flag_false = true; return true;
+    }
+    if (strcmp(arg, "--EdgeCaseTest.flag_0") == 0) {
+        ((EdgeCaseTest_t*)ctx->cfg)->flag_0 = true; return true;
+    }
+    if (strcmp(arg, "--EdgeCaseTest.hook_field") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((EdgeCaseTest_t*)ctx->cfg)->hook_field = cfg_intern_string(ctx, val);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--EdgeCaseTest.hook_field=", 26) == 0) {
+        const char *val = arg + 26;
+        ((EdgeCaseTest_t*)ctx->cfg)->hook_field = cfg_intern_string(ctx, val);
+        return true;
+    }
+    if (strcmp(arg, "--EdgeCaseTest.int_array") == 0) {
+        if (i + 1 < argc) {
+            cfg_parse_array(ctx, argv[++i], (void**)&((EdgeCaseTest_t*)ctx->cfg)->int_array.data, &((EdgeCaseTest_t*)ctx->cfg)->int_array.count);
+            *index = i; return true;
+        }
+    }
+    if (strcmp(arg, "--EdgeCaseTest.sub.nested_id") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((EdgeCaseTest_t*)ctx->cfg)->sub.nested_id = strtoll(val, NULL, 10);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--EdgeCaseTest.sub.nested_id=", 29) == 0) {
+        const char *val = arg + 29;
+        ((EdgeCaseTest_t*)ctx->cfg)->sub.nested_id = strtoll(val, NULL, 10);
+        return true;
+    }
+    if (strcmp(arg, "--EdgeCaseTest.sub.active") == 0 || (arg[0] == '-' && arg[1] == 'a' && arg[2] == '\0')) {
+        ((EdgeCaseTest_t*)ctx->cfg)->sub.active = true; return true;
+    }
+    if (strcmp(arg, "--EdgeCaseTest.weird.key_with_dash") == 0) {
+        if (i + 1 < argc) {
+            const char *val = argv[++i];
+            ((EdgeCaseTest_t*)ctx->cfg)->weird.key_with_dash = cfg_intern_string(ctx, val);
+            *index = i; return true;
+        }
+    }
+    if (strncmp(arg, "--EdgeCaseTest.weird.key_with_dash=", 35) == 0) {
+        const char *val = arg + 35;
+        ((EdgeCaseTest_t*)ctx->cfg)->weird.key_with_dash = cfg_intern_string(ctx, val);
+        return true;
+    }
+    *index = i;
+    return false;
+}
+
+void EdgeCaseTest_parse_cli(EdgeCaseTest_t *cfg, int argc, const char **argv) {
+    if (!cfg || !argv || argc <= 1) return;
+    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool };
+    for (int i = 1; i < argc; i++) {
+        if (argv[i][0] != '-') continue;
+        EdgeCaseTest_parse_arg(&ctx, argc, argv, &i);
+    }
+    cfg->internal_pool = ctx.pool;
+}
+
 static void EdgeCaseTest_ini_handler(void *user, const char *sec, const char *key, const char *val) {
     cfg_common_context_t *ctx = (cfg_common_context_t*)user;
     char sec_copy[256];
@@ -624,7 +879,7 @@ static void EdgeCaseTest_ini_handler(void *user, const char *sec, const char *ke
     EdgeCaseTest_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);
 }
 
-cfg_status_t EdgeCaseTest_load(EdgeCaseTest_t *cfg, const char *filename, cfg_error_t *err) {
+cfg_status_t EdgeCaseTest_load(EdgeCaseTest_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err) {
     if (!cfg) return CFG_ERR_VALIDATION;
     memset(cfg, 0, sizeof(EdgeCaseTest_t));
     cfg_common_context_t ctx = { cfg, NULL };
@@ -644,6 +899,7 @@ cfg_status_t EdgeCaseTest_load(EdgeCaseTest_t *cfg, const char *filename, cfg_er
         if (status != CFG_SUCCESS) { cfg_pool_free(ctx.pool); return status; }
     }
     cfg->internal_pool = ctx.pool;
+    EdgeCaseTest_parse_cli(cfg, argc, argv);
     if (!EdgeCaseTest_validate(cfg, err)) { EdgeCaseTest_free(cfg); return CFG_ERR_VALIDATION; }
     return CFG_SUCCESS;
 }

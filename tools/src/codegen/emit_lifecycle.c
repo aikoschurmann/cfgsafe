@@ -204,9 +204,31 @@ static void emit_ini_handler_body(CodegenContext *ctx, FILE *f, AstNode *node, c
     }
 }
 
+static void emit_cli_parser(CodegenContext *ctx, FILE *f, AstNode *schema, const char *schema_name) {
+    fprintf(f, "static bool %s_parse_arg(cfg_common_context_t *ctx, int argc, const char **argv, int *index) {\n", schema_name);
+    fprintf(f, "    int i = *index;\n");
+    fprintf(f, "    const char *arg = argv[i];\n");
+    char prefix[256]; snprintf(prefix, sizeof(prefix), "((%s_t*)ctx->cfg)->", schema_name);
+    emit_cli_parser_recursive(ctx, f, schema, prefix, schema_name, schema_name);
+    fprintf(f, "    *index = i;\n");
+    fprintf(f, "    return false;\n");
+    fprintf(f, "}\n\n");
+
+    fprintf(f, "void %s_parse_cli(%s_t *cfg, int argc, const char **argv) {\n", schema_name, schema_name);
+    fprintf(f, "    if (!cfg || !argv || argc <= 1) return;\n");
+    fprintf(f, "    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool };\n");
+    fprintf(f, "    for (int i = 1; i < argc; i++) {\n");
+    fprintf(f, "        if (argv[i][0] != '-') continue;\n");
+    fprintf(f, "        %s_parse_arg(&ctx, argc, argv, &i);\n", schema_name);
+    fprintf(f, "    }\n");
+    fprintf(f, "    cfg->internal_pool = ctx.pool;\n");
+    fprintf(f, "}\n\n");
+}
+
 void emit_recursive_ini_handler(CodegenContext *ctx, FILE *f, AstNode *schema, const char *schema_name) {
     fprintf(f, "static void %s_ini_handler_recursive(cfg_common_context_t *ctx, const char *key, const char *val, char **parts, int num_parts, int depth) {\n", schema_name);
     char prefix[256]; snprintf(prefix, sizeof(prefix), "((%s_t*)ctx->cfg)->", schema_name);
     emit_ini_handler_body(ctx, f, schema, prefix, schema_name, 0);
     fprintf(f, "}\n\n");
+    emit_cli_parser(ctx, f, schema, schema_name);
 }

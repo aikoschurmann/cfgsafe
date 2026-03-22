@@ -209,7 +209,8 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
     for (size_t i = 0; i < prog->schemas->count; i++) {
         AstNode *schema = *(AstNode**)dynarray_get(prog->schemas, i);
         const char* schema_name = get_str(schema->data.schema_decl.name);
-        fprintf(f, "cfg_status_t %s_load(%s_t *cfg, const char *filename, cfg_error_t *err);\n", schema_name, schema_name);
+        fprintf(f, "cfg_status_t %s_load(%s_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err);\n", schema_name, schema_name);
+        fprintf(f, "void %s_parse_cli(%s_t *cfg, int argc, const char **argv);\n", schema_name, schema_name);
         fprintf(f, "void %s_print(const %s_t *cfg, FILE *f);\n", schema_name, schema_name);
         fprintf(f, "void %s_free(%s_t *cfg);\n", schema_name, schema_name);
         emit_validation_prototypes(f, schema, schema_name);
@@ -265,7 +266,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "    %s_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);\n", schema_name);
         fprintf(f, "}\n\n");
 
-        fprintf(f, "cfg_status_t %s_load(%s_t *cfg, const char *filename, cfg_error_t *err) {\n", schema_name, schema_name);
+        fprintf(f, "cfg_status_t %s_load(%s_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err) {\n", schema_name, schema_name);
         fprintf(f, "    if (!cfg) return CFG_ERR_VALIDATION;\n");
         fprintf(f, "    memset(cfg, 0, sizeof(%s_t));\n", schema_name);
         fprintf(f, "    cfg_common_context_t ctx = { cfg, NULL };\n");
@@ -279,8 +280,10 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "    }\n");
 
         emit_env_overrides_recursive(ctx, &tracker, f, schema, "cfg->", "&ctx");
-
+        
         fprintf(f, "    cfg->internal_pool = ctx.pool;\n");
+        fprintf(f, "    %s_parse_cli(cfg, argc, argv);\n", schema_name);
+
         fprintf(f, "    if (!%s_validate(cfg, err)) { %s_free(cfg); return CFG_ERR_VALIDATION; }\n", schema_name, schema_name);
         fprintf(f, "    return CFG_SUCCESS;\n");
         fprintf(f, "}\n\n");

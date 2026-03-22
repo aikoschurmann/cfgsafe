@@ -5,7 +5,10 @@ schema NestedConfig {
         default: 99 
         hook: "test_nested_hook"
     }
-    active: bool { default: true }
+    active: bool { 
+        default: true 
+        short: "a"
+    }
 }
 
 schema TestSuite {
@@ -18,6 +21,7 @@ schema TestSuite {
     version: int {
         default: 1
         range: 1..100
+        short: "v"
     }
 
     api_key: string {
