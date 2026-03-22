@@ -1,78 +1,48 @@
-# cfgsafe — C99 Configuration Engine
+# cfgsafe — Type-Safe C99 Configuration
 
 ![C99 Strict](https://img.shields.io/badge/Language-C99-blue.svg)
-![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Zero Dependencies](https://img.shields.io/badge/Dependencies-0-success.svg)
 ![Single Header](https://img.shields.io/badge/Format-Single%20Header-orange.svg)
 
-**cfgsafe** is a high-performance configuration engine for C99. It transforms a declarative schema into a strongly-typed, memory-safe single-header C library.
+**cfgsafe** is a schema-driven configuration engine for C99. It transforms a declarative schema into a strongly-typed, memory-safe single-header C library.
 
-Stop writing fragile string-to-int parsing logic. Stop silencing invalid values. `cfgsafe` handles parsing, deep validation, and memory management for you, ensuring your configuration is 100% correct before your application logic even starts.
+Stop writing fragile string-to-int parsing logic. `cfgsafe` handles parsing, deep validation, and memory management for you, ensuring your configuration is 100% correct before your application logic even starts.
 
 ---
 
 ## Features
 
-* **Zero Dependencies**: Pure C99 implementation. No regex libraries, no JSON parsers, no external bloat.
-* **AOT Strong Typing**: Your schema compiles into a native C `struct`. Access fields naturally like `cfg.db.port` with the correct types (`int64_t`, `double`, `bool`, etc.). No dynamic string lookups natively!
-* **Layered Resolution**: Automatically merges **CLI Arguments**, **Environment Variables**, and **INI Files** safely with strict precedence.
-* **Deep Validation**: Built-in support for numeric `range`s, string `min_length`, regex `pattern` matching, and system file `exists` checks.
-* **Security Built-In**: Tag fields as `secret` to explicitly redact them from the auto-generated debug output.
-* **Safe Memory Model**: Uses an internal memory pool. Deeply nested configurations containing strings and arrays are freed with a single `_free()` call.
+* **Zero Dependencies**: Pure C99 implementation.
+* **AOT Strong Typing**: Your schema compiles into a native C `struct` (e.g., `cfg.db.port`).
+* **Layered Resolution**: Automatically merges **CLI Arguments**, **Environment Variables**, and **INI Files** with strict precedence.
+* **Deep Validation**: Built-in `range`s, `min_length`, regex `pattern`s, and file `exists` checks.
+* **Security Built-In**: Redact `secret` fields from debug output automatically.
+* **Safe Memory Model**: Deeply nested strings and arrays are managed by an internal pool and freed with one `_free()` call.
 
 ---
 
 ## Quick Start
 
-### 1. Write the Schema (`app.schema`)
-Define the shape of your constraints and defaults:
-
+### 1. Define your Schema (`app.schema`)
 ```scala
-import "validators.h" // Optional: custom C validation hooks
-
 schema Database {
-    host: string { 
-        default: "localhost" 
-        pattern: "^[a-z0-9.-]+$"
-    }
-    // Automatically binds to the DB_PORT env var
-    port: int { 
-        env: "DB_PORT"
-        default: 5432 
-        range: 1..65535 
-    }
-    password: string {
-        secret: true // Redacted from prints
-    }
+    host: string { default: "localhost" }
+    port: int    { default: 5432, range: 1..65535, env: "DB_PORT" }
+    password: string { secret: true }
 }
 
 schema Config {
     service_name: string { required: true }
-    
-    // Embed the defined Database schema
     db: Database {}
 }
 ```
 
-### 2. Add some Data (`config.ini`)
-Section names in your INI file map directly to your schema structure:
-
-```ini
-[Config]
-service_name = "production-api"
-
-[Config.db]
-host = "db.internal"
-password = "super_secret_password"
-```
-
-### 3. Generate & Run
-Run the generator on your schema:
+### 2. Generate Header
 ```bash
 cfg-gen app.schema -o config.h
 ```
 
-Include it in your C app:
+### 3. Use in C
 ```c
 #define CONFIG_IMPLEMENTATION
 #include "config.h"
@@ -81,47 +51,46 @@ int main(int argc, const char **argv) {
     Config_t cfg;
     cfg_error_t err;
 
-    // Parses the INI file, overrides with ENV variables, 
-    // and finally applies any CLI arguments (e.g. --db.port 9000)!
     if (Config_load(&cfg, "config.ini", argc, argv, &err) == CFG_SUCCESS) {
-        
-        // Fully initialized, strongly-typed C runtime struct 
-        printf("App: %s starting on DB port %d\n", 
-               cfg.service_name, 
-               (int)cfg.db.port);
-
-        // Safely dump config to stdout (tag 'secret' hides the password)
-        Config_print(&cfg, stdout);
-
-        // One call frees all dynamically allocated sub-strings/arrays
+        printf("App: %s on port %d\n", cfg.service_name, (int)cfg.db.port);
         Config_free(&cfg);
     } else {
-        fprintf(stderr, "Startup Failed! Field '%s': %s\n", err.field, err.message);
+        fprintf(stderr, "Error in %s: %s\n", err.field, err.message);
         return 1;
     }
-    return 0;
 }
 ```
 
 ---
 
-## Documentation & Reference
+## CLI Usage
 
-Dive into the details of the DSL and C integrations:
+The `cfg-gen` tool provides a simple interface:
 
-* [**Schema Definition Guide**](docs/schema_guide.md) - Syntax, data types (like nested arrays or IP addresses), validation rules, and implicit CLI flags mapping.
-* [**C API Reference**](docs/c_api_reference.md) - The generated module lifecycle, memory pooling mechanics, and creating custom C `hook` bindings.
+```text
+Usage: cfg-gen [options] <input.schema>
+
+Options:
+  -o, --output <file>    Set output header filename (default: config.h)
+  -a, --ast              Print the Abstract Syntax Tree instead of generating code
+  -v, --version          Show version information
+  -h, --help             Show this help message
+```
 
 ---
 
-## Installation & Build
+## Documentation
 
-Build the code generator binary from source:
+* [**Schema Definition Guide**](docs/schema_guide.md) - DSL syntax, types, and properties.
+* [**C API Reference**](docs/c_api_reference.md) - Lifecycle, hooks, and memory management.
+
+---
+
+## Installation
+
+Build the generator from source:
 
 ```bash
-git clone https://github.com/your-username/cfgsafe.git
-cd cfgsafe/tools
-make
+cd tools && make
 ```
-
-The generator will be available at `tools/out/cfg-gen`. We highly recommend invoking it as a pre-build step in your `CMakeLists.txt` or `Makefile`.
+The binary will be at `tools/out/cfg-gen`.

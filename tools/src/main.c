@@ -12,27 +12,60 @@
 #include "datastructures/utils.h"
 #include "file.h"
 
+static void print_usage(const char *prog_name) {
+    printf("cfgsafe - type-safe C configuration generator\n\n");
+    printf("Usage: %s [options] <input.schema>\n\n", prog_name);
+    printf("Options:\n");
+    printf("  -o, --output <file>    Set output header filename (default: config.h)\n");
+    printf("  -a, --ast              Print the Abstract Syntax Tree instead of generating code\n");
+    printf("  -v, --version          Show version information\n");
+    printf("  -h, --help             Show this help message\n\n");
+    printf("Example:\n");
+    printf("  %s -o my_config.h app.schema\n", prog_name);
+}
+
+static void print_version() {
+    printf("cfgsafe version 0.1.0\n");
+}
+
 int main(int argc, char const *argv[]) {
     bool print_ast_flag = false;
     const char *filename = NULL;
     const char *output_filename = "config.h";
 
+    if (argc < 2) {
+        print_usage(argv[0]);
+        return 1;
+    }
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--ast") == 0 || strcmp(argv[i], "-a") == 0) {
             print_ast_flag = true;
-        } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
-            output_filename = argv[++i];
+        } else if (strcmp(argv[i], "-o") == 0 || strcmp(argv[i], "--output") == 0) {
+            if (i + 1 < argc) {
+                output_filename = argv[++i];
+            } else {
+                fprintf(stderr, COLOR_RED "error:" COLOR_RESET " -o/--output requires a filename\n");
+                return 1;
+            }
+        } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_usage(argv[0]);
+            return 0;
+        } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0) {
+            print_version();
+            return 0;
         } else if (argv[i][0] != '-') {
             filename = argv[i];
         } else {
-            fprintf(stderr, "Unknown option: %s\n", argv[i]);
-            fprintf(stderr, "Usage: %s [--ast] [-o <output.h>] <config_file.schema>\n", argv[0]);
+            fprintf(stderr, COLOR_RED "error:" COLOR_RESET " Unknown option: %s\n", argv[i]);
+            print_usage(argv[0]);
             return 1;
         }
     }
 
     if (!filename) {
-        fprintf(stderr, "Usage: %s [--ast] [-o <output.h>] <config_file.schema>\n", argv[0]);
+        fprintf(stderr, COLOR_RED "error:" COLOR_RESET " No input schema file specified\n");
+        print_usage(argv[0]);
         return 1;
     }
 
