@@ -127,7 +127,6 @@ bool weird_validate(const weird_t *cfg, cfg_error_t *err);
 #define CFG_FILE_EXISTS(path) (access((path), F_OK) == 0)
 #endif
 #endif /* CFG_FILE_EXISTS */
-
 typedef struct cfg_pool_node {
     void *ptr;
     struct cfg_pool_node *next;
