@@ -63,6 +63,23 @@ int main(int argc, const char **argv) {
 
 ---
 
+## Configuration Format (INI)
+
+`cfgsafe` uses standard INI files with dot-notation for hierarchy.
+
+```ini
+[Config]
+service_name = "My Application"
+
+[Config.db]
+host = "localhost"
+port = 5432
+```
+
+See the [**INI Reference**](docs/ini_reference.md) for full details on section naming and value types.
+
+---
+
 ## CLI Usage
 
 The `cfg-gen` tool provides a simple interface:
@@ -82,6 +99,7 @@ Options:
 ## Documentation
 
 * [**Schema Definition Guide**](docs/schema_guide.md) - DSL syntax, types, and properties.
+* [**INI Configuration Reference**](docs/ini_reference.md) - Mapping schema to INI files.
 * [**C API Reference**](docs/c_api_reference.md) - Lifecycle, hooks, and memory management.
 
 ---

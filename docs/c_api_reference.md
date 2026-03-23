@@ -36,13 +36,39 @@ typedef struct {
 } cfg_ipv4_t;
 ```
 
+### Enumerations
+The enum is prefixed with the schema and field name to avoid collisions:
+
+```c
+// Schema: schema Logger { level: enum(DEBUG, INFO) }
+typedef enum {
+    Logger_level_DEBUG,
+    Logger_level_INFO
+} Logger_level_t;
+```
+
+**Usage:**
+```c
+if (config.level == Logger_level_DEBUG) {
+    // ...
+}
+```
+
 ### Arrays
-Arrays are generated as anonymous structs:
+Arrays are generated as anonymous structs within the parent schema struct:
 ```c
 struct { 
     T *data; 
     size_t count; 
 } field_name;
+```
+
+**Usage:**
+```c
+// Iterate over array
+for (size_t i = 0; i < config.node_ips.count; i++) {
+    printf("Node %zu: %s\n", i, config.node_ips.data[i]);
+}
 ```
 
 ---
@@ -154,12 +180,3 @@ typedef struct {
     size_t line;       // INI line number (0 if not applicable)
 } cfg_error_t;
 ```
-
----
-
-## Thread Safety
-
-1. **`_load` / `_free`**: **Not thread-safe**. These functions modify the internal memory pool and should be called from a single thread.
-2. **`_print` / `_validate` / Read Access**: **Thread-safe** as long as the config is treated as **read-only** after loading. 
-
-**Recommended Pattern**: Load configuration once at startup, then pass a `const Name_t *` to worker threads.
