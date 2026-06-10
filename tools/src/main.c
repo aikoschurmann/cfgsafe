@@ -24,7 +24,7 @@ static void print_usage(const char *prog_name) {
     printf("  %s -o my_config.h app.schema\n", prog_name);
 }
 
-static void print_version() {
+static void print_version(void) {
     printf("cfgsafe version 0.1.0\n");
 }
 

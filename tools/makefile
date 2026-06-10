@@ -1,6 +1,6 @@
 NAME    := cfg-gen
 CC      := gcc
-CFLAGS  := -Wall -Iinclude -g
+CFLAGS  := -Wall -Wextra -Wpedantic -std=c99 -Iinclude -g
 SRC_DIR := src
 OUT_DIR := out
 

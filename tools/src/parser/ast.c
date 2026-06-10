@@ -189,5 +189,6 @@ void print_ast_recursive(AstNode *node, int depth, bool is_last, DenseInterner *
 }
 
 void print_ast(AstNode *node, int depth, DenseInterner *keywords, DenseInterner *identifiers, DenseInterner *strings) {
+    (void)depth;
     print_ast_recursive(node, 0, true, keywords, identifiers, strings);
 }

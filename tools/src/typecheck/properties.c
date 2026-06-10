@@ -152,6 +152,7 @@ static bool check_enum_member(Arena *arena, Type *field_type, AstNode *literal, 
 }
 
 static bool check_value_matches(Arena *arena, DynArray *errors, const char *filename, SymbolTable *symbols, TypeStore *store, Type *field_type, AstNode *value_node, PropertyDef def, char **out_err, const char *prop_name) {
+    (void)store;
     switch (def.value_kind) {
         case PROP_VAL_LITERAL: {
             if (value_node->node_type != AST_LITERAL) {

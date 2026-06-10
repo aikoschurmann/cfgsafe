@@ -29,6 +29,7 @@ void report_type_error(Arena *arena, DynArray *errors, TypeErrorKind kind, Span 
 }
 
 void print_type_errors(DynArray *errors, DenseInterner *identifiers) {
+    (void)identifiers;
     for (size_t i = 0; i < errors->count; i++) {
         TypeError *err = *(TypeError**)dynarray_get(errors, i);
         
