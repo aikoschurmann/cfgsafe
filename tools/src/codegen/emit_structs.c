@@ -84,7 +84,12 @@ void emit_section_or_schema(CodegenContext *ctx, FILE *f, AstNode *node, const c
         }
     }
 
-    fprintf(f, "typedef struct %s_t {\n", name);
+    if (node->node_type == AST_SCHEMA_DECL) {
+        fprintf(f, "struct %s_t {\n", name);
+    } else {
+        fprintf(f, "typedef struct %s_t {\n", name);
+    }
+    
     for (size_t i = 0; i < items->count; i++) {
         AstNode *item = *(AstNode**)dynarray_get(items, i);
         if (item->node_type == AST_FIELD_DECL) {
@@ -95,6 +100,8 @@ void emit_section_or_schema(CodegenContext *ctx, FILE *f, AstNode *node, const c
     }
     if (node->node_type == AST_SCHEMA_DECL) {
         fprintf(f, "    void* internal_pool;\n");
+        fprintf(f, "};\n\n");
+    } else {
+        fprintf(f, "} %s_t;\n\n", name);
     }
-    fprintf(f, "} %s_t;\n\n", name);
 }

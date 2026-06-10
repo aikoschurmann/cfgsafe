@@ -227,6 +227,7 @@ static void emit_cli_parser(CodegenContext *ctx, FILE *f, AstNode *schema, const
 
 void emit_recursive_ini_handler(CodegenContext *ctx, FILE *f, AstNode *schema, const char *schema_name) {
     fprintf(f, "static void %s_ini_handler_recursive(cfg_common_context_t *ctx, const char *key, const char *val, char **parts, int num_parts, int depth) {\n", schema_name);
+    fprintf(f, "    (void)parts; (void)depth;\n");
     char prefix[256]; snprintf(prefix, sizeof(prefix), "((%s_t*)ctx->cfg)->", schema_name);
     emit_ini_handler_body(ctx, f, schema, prefix, schema_name, 0);
     fprintf(f, "}\n\n");

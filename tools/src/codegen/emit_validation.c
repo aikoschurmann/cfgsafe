@@ -138,6 +138,7 @@ void emit_validation_function(UsageTracker *tracker, CodegenContext *ctx, FILE *
 
     fprintf(f, "bool %s_validate(const %s_t *cfg, cfg_error_t *err) {\n", name, name);
     fprintf(f, "    if (!cfg) return false;\n");
+    fprintf(f, "    (void)err;\n");
     
     for (size_t i = 0; i < items->count; i++) {
         AstNode *item = *(AstNode**)dynarray_get(items, i);
