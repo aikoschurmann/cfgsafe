@@ -187,7 +187,7 @@ static const char* cfg_intern_string(cfg_common_context_t *ctx, const char *s) {
     return copy;
 }
 
-static void cfg_parse_array(cfg_common_context_t *ctx, const char *val, void **data, size_t *count) {
+static void cfg_parse_array_string(cfg_common_context_t *ctx, const char *val, void **data, size_t *count) {
     char *val_copy = (char*)malloc(strlen(val) + 1);
     if (!val_copy) return;
     strcpy(val_copy, val);
@@ -206,9 +206,40 @@ static void cfg_parse_array(cfg_common_context_t *ctx, const char *val, void **d
     token = cfg_next_token(&s, ",");
     for (size_t i = 0; i < n; i++) {
         while(isspace(*token)) token++;
-        char *end = token + strlen(token) - 1;
-        while(end > token && isspace(*end)) *end-- = '\0';
-        ((const char**)*data)[i] = cfg_intern_string(ctx, token);
+        char *elem = token;
+        if (*elem == '\"') {
+            elem++;
+            char *v_end = strrchr(elem, '\"');
+            if (v_end) *v_end = '\0';
+        } else {
+            char *v_end = elem + strlen(elem) - 1;
+            while(v_end > elem && isspace(*v_end)) *v_end-- = '\0';
+        }
+        ((const char**)*data)[i] = cfg_intern_string(ctx, elem);
+        token = cfg_next_token(&s, ",");
+    }
+    free(val_copy);
+}
+
+static void cfg_parse_array_int(cfg_common_context_t *ctx, const char *val, void **data, size_t *count) {
+    char *val_copy = (char*)malloc(strlen(val) + 1);
+    if (!val_copy) return;
+    strcpy(val_copy, val);
+    char *s = val_copy;
+    char *token = cfg_next_token(&s, ",");
+    size_t n = 0;
+    while (token) { n++; token = cfg_next_token(&s, ","); }
+    free(val_copy);
+    *count = n;
+    if (n == 0) { *data = NULL; return; }
+    *data = cfg_pool_alloc(&ctx->pool, n * sizeof(int64_t));
+    val_copy = (char*)malloc(strlen(val) + 1);
+    if (!val_copy) return;
+    strcpy(val_copy, val);
+    s = val_copy;
+    token = cfg_next_token(&s, ",");
+    for (size_t i = 0; i < n; i++) {
+        ((int64_t*)*data)[i] = strtoll(token, NULL, 10);
         token = cfg_next_token(&s, ",");
     }
     free(val_copy);
@@ -250,7 +281,32 @@ static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, void *use
                 *eq = '\0'; char *key = p, *val = eq + 1;
                 char *k_end = key + strlen(key) - 1; while(k_end > key && isspace(*k_end)) *k_end-- = '\0';
                 while(isspace(*val)) val++;
-                char *v_end = val + strlen(val) - 1; while(v_end > val && isspace(*v_end)) *v_end-- = '\0';
+                
+                // Handle quoted values and inline comments
+                bool in_quotes = false;
+                char *ptr = val;
+                char *comment = NULL;
+                while (*ptr) {
+                    if (*ptr == '\"') in_quotes = !in_quotes;
+                    else if ((*ptr == ';' || *ptr == '#') && !in_quotes) {
+                        comment = ptr;
+                        break;
+                    }
+                    ptr++;
+                }
+                if (comment) *comment = '\0';
+                
+                char *v_end = val + strlen(val) - 1;
+                while(v_end >= val && isspace(*v_end)) *v_end-- = '\0';
+                
+                if (*val == '\"' && v_end >= val && *v_end == '\"') {
+                    int quote_count = 0;
+                    for (char *q = val; *q; q++) if (*q == '\"') quote_count++;
+                    if (quote_count == 2) {
+                        val++;
+                        *v_end = '\0';
+                    }
+                }
                 cb(user, section, key, val);
             } else {
                 cfg_set_error(err, "missing assignment operator", p, line_num); success = false;
@@ -448,7 +504,10 @@ void TestSuite_print(const TestSuite_t *cfg, FILE *f) {
     fprintf(f, "%lld\n", (long long)cfg->level1.level2.level3.level4.depth);
     fprintf(f, "%*stags = ", 8, "");
     fprintf(f, "[ ");
-    for (size_t i = 0; i < cfg->level1.level2.level3.level4.tags.count; i++) fprintf(f, "%s%s", i > 0 ? ", " : "", ((const char**)cfg->level1.level2.level3.level4.tags.data)[i]);
+    for (size_t i = 0; i < cfg->level1.level2.level3.level4.tags.count; i++) {
+        if (i > 0) fprintf(f, ", ");
+        fprintf(f, "%s", ((const char**)cfg->level1.level2.level3.level4.tags.data)[i]);
+    }
     fprintf(f, " ]\n");
     fprintf(f, "%*sglobal_level = ", 0, "");
     fprintf(f, "%d (enum)\n", (int)cfg->global_level);
@@ -510,7 +569,7 @@ static void TestSuite_ini_handler_recursive(cfg_common_context_t *ctx, const cha
                             return;
                         }
                         if (strcmp(key, "tags") == 0) {
-                            cfg_parse_array(ctx, val, (void**)&((TestSuite_t*)ctx->cfg)->level1.level2.level3.level4.tags.data, &((TestSuite_t*)ctx->cfg)->level1.level2.level3.level4.tags.count);
+                            cfg_parse_array_string(ctx, val, (void**)&((TestSuite_t*)ctx->cfg)->level1.level2.level3.level4.tags.data, &((TestSuite_t*)ctx->cfg)->level1.level2.level3.level4.tags.count);
                             return;
                         }
                     }
@@ -612,7 +671,7 @@ static bool TestSuite_parse_arg(cfg_common_context_t *ctx, int argc, const char 
     }
     if (strcmp(arg, "--TestSuite.level1.level2.level3.level4.tags") == 0) {
         if (i + 1 < argc) {
-            cfg_parse_array(ctx, argv[++i], (void**)&((TestSuite_t*)ctx->cfg)->level1.level2.level3.level4.tags.data, &((TestSuite_t*)ctx->cfg)->level1.level2.level3.level4.tags.count);
+            cfg_parse_array_string(ctx, argv[++i], (void**)&((TestSuite_t*)ctx->cfg)->level1.level2.level3.level4.tags.data, &((TestSuite_t*)ctx->cfg)->level1.level2.level3.level4.tags.count);
             *index = i; return true;
         }
     }
@@ -722,7 +781,10 @@ void EdgeCaseTest_print(const EdgeCaseTest_t *cfg, FILE *f) {
     fprintf(f, "\"%s\"\n", cfg->hook_field ? cfg->hook_field : "null");
     fprintf(f, "%*sint_array = ", 0, "");
     fprintf(f, "[ ");
-    for (size_t i = 0; i < cfg->int_array.count; i++) fprintf(f, "%s%s", i > 0 ? ", " : "", ((const char**)cfg->int_array.data)[i]);
+    for (size_t i = 0; i < cfg->int_array.count; i++) {
+        if (i > 0) fprintf(f, ", ");
+        fprintf(f, "%lld", (long long)((int64_t*)cfg->int_array.data)[i]);
+    }
     fprintf(f, " ]\n");
     fprintf(f, "%*ssub = ", 0, "");
     fprintf(f, "{\n");
@@ -769,7 +831,7 @@ static void EdgeCaseTest_ini_handler_recursive(cfg_common_context_t *ctx, const 
             return;
         }
         if (strcmp(key, "int_array") == 0) {
-            cfg_parse_array(ctx, val, (void**)&((EdgeCaseTest_t*)ctx->cfg)->int_array.data, &((EdgeCaseTest_t*)ctx->cfg)->int_array.count);
+            cfg_parse_array_int(ctx, val, (void**)&((EdgeCaseTest_t*)ctx->cfg)->int_array.data, &((EdgeCaseTest_t*)ctx->cfg)->int_array.count);
             return;
         }
         if (strcmp(key, "sub") == 0) {
@@ -851,7 +913,7 @@ static bool EdgeCaseTest_parse_arg(cfg_common_context_t *ctx, int argc, const ch
     }
     if (strcmp(arg, "--EdgeCaseTest.int_array") == 0) {
         if (i + 1 < argc) {
-            cfg_parse_array(ctx, argv[++i], (void**)&((EdgeCaseTest_t*)ctx->cfg)->int_array.data, &((EdgeCaseTest_t*)ctx->cfg)->int_array.count);
+            cfg_parse_array_int(ctx, argv[++i], (void**)&((EdgeCaseTest_t*)ctx->cfg)->int_array.data, &((EdgeCaseTest_t*)ctx->cfg)->int_array.count);
             *index = i; return true;
         }
     }

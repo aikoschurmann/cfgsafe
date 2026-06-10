@@ -56,8 +56,19 @@ static void emit_print_recursive(CodegenContext *ctx, FILE *f, AstNode *node, co
             } else if (type->kind == AST_TYPE_ENUM) {
                 fprintf(f, "    fprintf(f, \"%%d (enum)\\n\", (int)%s%s);\n", prefix, fname);
             } else if (type->kind == AST_TYPE_ARRAY) {
+                AstNode *elem = type->u.array.elem;
                 fprintf(f, "    fprintf(f, \"[ \");\n");
-                fprintf(f, "    for (size_t i = 0; i < %s%s.count; i++) fprintf(f, \"%%s%%s\", i > 0 ? \", \" : \"\", ((const char**)%s%s.data)[i]);\n", prefix, fname, prefix, fname);
+                fprintf(f, "    for (size_t i = 0; i < %s%s.count; i++) {\n", prefix, fname);
+                fprintf(f, "        if (i > 0) fprintf(f, \", \");\n");
+                if (elem->data.ast_type.kind == AST_TYPE_PRIMITIVE) {
+                    const char *elem_tname = get_str(elem->data.ast_type.u.primitive.name);
+                    if (strcmp(elem_tname, "int") == 0) fprintf(f, "        fprintf(f, \"%%lld\", (long long)((int64_t*)%s%s.data)[i]);\n", prefix, fname);
+                    else if (strcmp(elem_tname, "float") == 0) fprintf(f, "        fprintf(f, \"%%f\", ((double*)%s%s.data)[i]);\n", prefix, fname);
+                    else fprintf(f, "        fprintf(f, \"%%s\", ((const char**)%s%s.data)[i]);\n", prefix, fname);
+                } else {
+                    fprintf(f, "        fprintf(f, \"%%s\", ((const char**)%s%s.data)[i]);\n", prefix, fname);
+                }
+                fprintf(f, "    }\n");
                 fprintf(f, "    fprintf(f, \" ]\\n\");\n");
             }
         } else if (item->node_type == AST_SECTION_DECL) {

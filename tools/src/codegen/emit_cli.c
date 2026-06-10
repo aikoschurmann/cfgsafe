@@ -93,7 +93,17 @@ void emit_cli_parser_recursive(CodegenContext *ctx, FILE *f, AstNode *node, cons
                 if (short_flag) fprintf(f, " || (arg[0] == '-' && arg[1] == '%c' && arg[2] == '\\0')", short_flag[0]);
                 fprintf(f, ") {\n");
                 fprintf(f, "        if (i + 1 < argc) {\n");
-                fprintf(f, "            cfg_parse_array(ctx, argv[++i], (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
+                AstNode *elem = type_node->data.ast_type.u.array.elem;
+                if (elem->data.ast_type.kind == AST_TYPE_PRIMITIVE) {
+                    const char *elem_tname = get_str(elem->data.ast_type.u.primitive.name);
+                    if (strcmp(elem_tname, "int") == 0) {
+                        fprintf(f, "            cfg_parse_array_int(ctx, argv[++i], (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
+                    } else {
+                        fprintf(f, "            cfg_parse_array_string(ctx, argv[++i], (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
+                    }
+                } else {
+                    fprintf(f, "            cfg_parse_array_string(ctx, argv[++i], (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
+                }
                 fprintf(f, "            *index = i; return true;\n");
                 fprintf(f, "        }\n");
                 fprintf(f, "    }\n");

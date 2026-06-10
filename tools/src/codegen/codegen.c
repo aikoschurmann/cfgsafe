@@ -72,7 +72,7 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
     fprintf(f, "    return copy;\n");
     fprintf(f, "}\n\n");
 
-    fprintf(f, "static void cfg_parse_array(cfg_common_context_t *ctx, const char *val, void **data, size_t *count) {\n");
+    fprintf(f, "static void cfg_parse_array_string(cfg_common_context_t *ctx, const char *val, void **data, size_t *count) {\n");
     fprintf(f, "    char *val_copy = (char*)malloc(strlen(val) + 1);\n");
     fprintf(f, "    if (!val_copy) return;\n");
     fprintf(f, "    strcpy(val_copy, val);\n");
@@ -91,9 +91,41 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
     fprintf(f, "    token = cfg_next_token(&s, \",\");\n");
     fprintf(f, "    for (size_t i = 0; i < n; i++) {\n");
     fprintf(f, "        while(isspace(*token)) token++;\n");
-    fprintf(f, "        char *end = token + strlen(token) - 1;\n");
-    fprintf(f, "        while(end > token && isspace(*end)) *end-- = '\\0';\n");
-    fprintf(f, "        ((const char**)*data)[i] = cfg_intern_string(ctx, token);\n");
+    fprintf(f, "        char *elem = token;\n");
+    fprintf(f, "        if (*elem == '\\\"') {\n");
+    fprintf(f, "            elem++;\n");
+    fprintf(f, "            char *v_end = strrchr(elem, '\\\"');\n");
+    fprintf(f, "            if (v_end) *v_end = '\\0';\n");
+    fprintf(f, "        } else {\n");
+    fprintf(f, "            char *v_end = elem + strlen(elem) - 1;\n");
+    fprintf(f, "            while(v_end > elem && isspace(*v_end)) *v_end-- = '\\0';\n");
+    fprintf(f, "        }\n");
+    fprintf(f, "        ((const char**)*data)[i] = cfg_intern_string(ctx, elem);\n");
+    fprintf(f, "        token = cfg_next_token(&s, \",\");\n");
+    fprintf(f, "    }\n");
+
+    fprintf(f, "    free(val_copy);\n");
+    fprintf(f, "}\n\n");
+
+    fprintf(f, "static void cfg_parse_array_int(cfg_common_context_t *ctx, const char *val, void **data, size_t *count) {\n");
+    fprintf(f, "    char *val_copy = (char*)malloc(strlen(val) + 1);\n");
+    fprintf(f, "    if (!val_copy) return;\n");
+    fprintf(f, "    strcpy(val_copy, val);\n");
+    fprintf(f, "    char *s = val_copy;\n");
+    fprintf(f, "    char *token = cfg_next_token(&s, \",\");\n");
+    fprintf(f, "    size_t n = 0;\n");
+    fprintf(f, "    while (token) { n++; token = cfg_next_token(&s, \",\"); }\n");
+    fprintf(f, "    free(val_copy);\n");
+    fprintf(f, "    *count = n;\n");
+    fprintf(f, "    if (n == 0) { *data = NULL; return; }\n");
+    fprintf(f, "    *data = cfg_pool_alloc(&ctx->pool, n * sizeof(int64_t));\n");
+    fprintf(f, "    val_copy = (char*)malloc(strlen(val) + 1);\n");
+    fprintf(f, "    if (!val_copy) return;\n");
+    fprintf(f, "    strcpy(val_copy, val);\n");
+    fprintf(f, "    s = val_copy;\n");
+    fprintf(f, "    token = cfg_next_token(&s, \",\");\n");
+    fprintf(f, "    for (size_t i = 0; i < n; i++) {\n");
+    fprintf(f, "        ((int64_t*)*data)[i] = strtoll(token, NULL, 10);\n");
     fprintf(f, "        token = cfg_next_token(&s, \",\");\n");
     fprintf(f, "    }\n");
     fprintf(f, "    free(val_copy);\n");
@@ -137,7 +169,32 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
     fprintf(f, "                *eq = '\\0'; char *key = p, *val = eq + 1;\n");
     fprintf(f, "                char *k_end = key + strlen(key) - 1; while(k_end > key && isspace(*k_end)) *k_end-- = '\\0';\n");
     fprintf(f, "                while(isspace(*val)) val++;\n");
-    fprintf(f, "                char *v_end = val + strlen(val) - 1; while(v_end > val && isspace(*v_end)) *v_end-- = '\\0';\n");
+    fprintf(f, "                \n");
+    fprintf(f, "                // Handle quoted values and inline comments\n");
+    fprintf(f, "                bool in_quotes = false;\n");
+    fprintf(f, "                char *ptr = val;\n");
+    fprintf(f, "                char *comment = NULL;\n");
+    fprintf(f, "                while (*ptr) {\n");
+    fprintf(f, "                    if (*ptr == '\\\"') in_quotes = !in_quotes;\n");
+    fprintf(f, "                    else if ((*ptr == ';' || *ptr == '#') && !in_quotes) {\n");
+    fprintf(f, "                        comment = ptr;\n");
+    fprintf(f, "                        break;\n");
+    fprintf(f, "                    }\n");
+    fprintf(f, "                    ptr++;\n");
+    fprintf(f, "                }\n");
+    fprintf(f, "                if (comment) *comment = '\\0';\n");
+    fprintf(f, "                \n");
+    fprintf(f, "                char *v_end = val + strlen(val) - 1;\n");
+    fprintf(f, "                while(v_end >= val && isspace(*v_end)) *v_end-- = '\\0';\n");
+    fprintf(f, "                \n");
+    fprintf(f, "                if (*val == '\\\"' && v_end >= val && *v_end == '\\\"') {\n");
+    fprintf(f, "                    int quote_count = 0;\n");
+    fprintf(f, "                    for (char *q = val; *q; q++) if (*q == '\\\"') quote_count++;\n");
+    fprintf(f, "                    if (quote_count == 2) {\n");
+    fprintf(f, "                        val++;\n");
+    fprintf(f, "                        *v_end = '\\0';\n");
+    fprintf(f, "                    }\n");
+    fprintf(f, "                }\n");
     fprintf(f, "                cb(user, section, key, val);\n");
     fprintf(f, "            } else {\n");
     fprintf(f, "                cfg_set_error(err, \"missing assignment operator\", p, line_num); success = false;\n");
@@ -147,6 +204,7 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
     fprintf(f, "    fclose(f);\n");
     fprintf(f, "    return success ? CFG_SUCCESS : CFG_ERR_SYNTAX;\n");
     fprintf(f, "}\n\n");
+
 }
 
 bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {

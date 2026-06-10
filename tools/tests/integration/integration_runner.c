@@ -144,6 +144,8 @@ int main(int argc, char **argv) {
             edge.sub.nested_id == 555 &&
             edge.sub.active == false &&
             edge.int_array.count == 2 &&
+            edge.int_array.data[0] == 10 &&
+            edge.int_array.data[1] == 20 &&
             strcmp(edge.weird.key_with_dash, "some-value") == 0) {
             printf("PASSED: Handled diverse booleans, cross-schema, and nested fields.\n");
             tests_passed++;
@@ -338,6 +340,29 @@ int main(int argc, char **argv) {
         TestSuite_free(&cfg);
     } else {
         printf("FAILED: CLI precedence test failed. Error: %s\n", err.message);
+    }
+
+    // Test 22: Quoted Strings and Inline Comments
+    total_tests++;
+    printf("\nTest %d: Quoted Strings and Inline Comments...\n", total_tests);
+    if (TestSuite_load(&cfg, "integration_robustness.ini", argc, (const char**)argv, &err) == CFG_SUCCESS) {
+        if (strcmp(cfg.project_name, "Quoted_Name") == 0 &&
+            cfg.version == 42 &&
+            cfg.level1.level2.level3.level4.tags.count == 3 &&
+            strcmp(cfg.level1.level2.level3.level4.tags.data[0], "tag with space") == 0 &&
+            strcmp(cfg.level1.level2.level3.level4.tags.data[2], "another space") == 0) {
+            printf("PASSED: Correctly handled quoted strings and comments.\n");
+            tests_passed++;
+        } else {
+            printf("FAILED: Robustness data mismatch.\n");
+            printf("  name: '%s'\n", cfg.project_name);
+            printf("  version: %lld\n", (long long)cfg.version);
+            printf("  tag[0]: '%s'\n", cfg.level1.level2.level3.level4.tags.data[0]);
+            printf("  tag[2]: '%s'\n", cfg.level1.level2.level3.level4.tags.data[2]);
+        }
+        TestSuite_free(&cfg);
+    } else {
+        printf("FAILED: Failed to load robustness INI. Error: %s, Field: %s\n", err.message, err.field);
     }
 
     printf("\n--- Test Results Summary ---\n");

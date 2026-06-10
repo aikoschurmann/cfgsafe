@@ -167,7 +167,20 @@ static void emit_ini_handler_body(CodegenContext *ctx, FILE *f, AstNode *node, c
                         (k == 0 ? "" : "else "), mname, prefix, fname, parent_name, fname, mname);
                 }
             } else if (type->kind == AST_TYPE_ARRAY) {
-                emit_indent(f, target_depth + 3); fprintf(f, "cfg_parse_array(ctx, val, (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
+                AstNode *elem = type->u.array.elem;
+                if (elem->data.ast_type.kind == AST_TYPE_PRIMITIVE) {
+                    const char *elem_tname = get_str(elem->data.ast_type.u.primitive.name);
+                    if (strcmp(elem_tname, "int") == 0) {
+                        emit_indent(f, target_depth + 3); fprintf(f, "cfg_parse_array_int(ctx, val, (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
+                    } else if (strcmp(elem_tname, "string") == 0 || strcmp(elem_tname, "path") == 0) {
+                        emit_indent(f, target_depth + 3); fprintf(f, "cfg_parse_array_string(ctx, val, (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
+                    } else {
+                        // Fallback or other types...
+                        emit_indent(f, target_depth + 3); fprintf(f, "cfg_parse_array_string(ctx, val, (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
+                    }
+                } else {
+                    emit_indent(f, target_depth + 3); fprintf(f, "cfg_parse_array_string(ctx, val, (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
+                }
             }
             emit_indent(f, target_depth + 3); fprintf(f, "return;\n");
             emit_indent(f, target_depth + 2); fprintf(f, "}\n");

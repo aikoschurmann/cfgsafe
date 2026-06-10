@@ -78,6 +78,19 @@ Keep using dot-notation for any depth: `[Config.network.ssl]`.
 
 ---
 
+## Comments
+
+Inline comments are supported using `;` or `#`. Comments can appear on their own lines or after values.
+
+```ini
+# This is a comment
+[Server]
+port = 8080 ; This is an inline comment
+host = "127.0.0.1" # This is also an inline comment
+```
+
+---
+
 ## Value Types
 
 ### Primitives
