@@ -2,7 +2,6 @@
 #include <string.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdalign.h>
 #include <limits.h>
 #include "datastructures/arena.h"
 
@@ -74,7 +73,13 @@ void *arena_alloc(Arena *arena, size_t size) {
     if (!arena) return NULL;
     if (size == 0) return NULL; /* semantic choice */
 
-    const size_t align = alignof(max_align_t);
+    /* C99 compatible max alignment */
+    typedef union {
+        long double d;
+        void *p;
+        long l;
+    } max_align_t;
+    const size_t align = sizeof(max_align_t);
 
     ArenaBlock *block = arena->blocks;
     if (!block) return NULL;
