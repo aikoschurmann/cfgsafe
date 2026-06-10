@@ -2,6 +2,10 @@
 #ifndef GENERATED_INTEGRATION_H
 #define GENERATED_INTEGRATION_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -30,11 +34,11 @@ typedef struct NestedConfig_t NestedConfig_t;
 typedef struct TestSuite_t TestSuite_t;
 typedef struct EdgeCaseTest_t EdgeCaseTest_t;
 
-typedef struct NestedConfig_t {
+struct NestedConfig_t {
     int64_t nested_id;
     bool active;
     void* internal_pool;
-} NestedConfig_t;
+};
 
 typedef enum {
     TestSuite_global_level_DEBUG,
@@ -64,20 +68,20 @@ typedef struct level1_t {
     level2_t level2;
 } level1_t;
 
-typedef struct TestSuite_t {
+struct TestSuite_t {
     const char* project_name;
     int64_t version;
     const char* api_key;
     level1_t level1;
     TestSuite_global_level_t global_level;
     void* internal_pool;
-} TestSuite_t;
+};
 
 typedef struct weird_t {
     const char* key_with_dash;
 } weird_t;
 
-typedef struct EdgeCaseTest_t {
+struct EdgeCaseTest_t {
     const char* empty_str;
     const char* space_str;
     bool flag_true;
@@ -89,7 +93,7 @@ typedef struct EdgeCaseTest_t {
     NestedConfig_t sub;
     weird_t weird;
     void* internal_pool;
-} EdgeCaseTest_t;
+};
 
 cfg_status_t NestedConfig_load(NestedConfig_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err);
 void NestedConfig_parse_cli(NestedConfig_t *cfg, int argc, const char **argv);
@@ -111,6 +115,10 @@ void EdgeCaseTest_print(const EdgeCaseTest_t *cfg, FILE *f);
 void EdgeCaseTest_free(EdgeCaseTest_t *cfg);
 bool EdgeCaseTest_validate(const EdgeCaseTest_t *cfg, cfg_error_t *err);
 bool weird_validate(const weird_t *cfg, cfg_error_t *err);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* GENERATED_INTEGRATION_H */
 
@@ -160,6 +168,18 @@ typedef struct {
     cfg_pool_node_t *pool;
 } cfg_common_context_t;
 
+static char* cfg_next_token(char **str, const char *delim) {
+    char *s = *str;
+    if (!s || *s == '\0') return NULL;
+    s += strspn(s, delim);
+    if (*s == '\0') { *str = s; return NULL; }
+    char *token = s;
+    s += strcspn(s, delim);
+    if (*s != '\0') { *s = '\0'; *str = s + 1; }
+    else { *str = s; }
+    return token;
+}
+
 static const char* cfg_intern_string(cfg_common_context_t *ctx, const char *s) {
     if (!s) return NULL;
     char *copy = (char*)cfg_pool_alloc(&ctx->pool, strlen(s) + 1);
@@ -172,9 +192,9 @@ static void cfg_parse_array(cfg_common_context_t *ctx, const char *val, void **d
     if (!val_copy) return;
     strcpy(val_copy, val);
     char *s = val_copy;
-    char *token = strtok(s, ",");
+    char *token = cfg_next_token(&s, ",");
     size_t n = 0;
-    while (token) { n++; token = strtok(NULL, ","); }
+    while (token) { n++; token = cfg_next_token(&s, ","); }
     free(val_copy);
     *count = n;
     if (n == 0) { *data = NULL; return; }
@@ -183,13 +203,13 @@ static void cfg_parse_array(cfg_common_context_t *ctx, const char *val, void **d
     if (!val_copy) return;
     strcpy(val_copy, val);
     s = val_copy;
-    token = strtok(s, ",");
+    token = cfg_next_token(&s, ",");
     for (size_t i = 0; i < n; i++) {
         while(isspace(*token)) token++;
         char *end = token + strlen(token) - 1;
         while(end > token && isspace(*end)) *end-- = '\0';
         ((const char**)*data)[i] = cfg_intern_string(ctx, token);
-        token = strtok(NULL, ",");
+        token = cfg_next_token(&s, ",");
     }
     free(val_copy);
 }
@@ -254,6 +274,7 @@ static bool cfg_pattern_0_match(const char *s) {
 
 bool NestedConfig_validate(const NestedConfig_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
+    (void)err;
     if (!test_nested_hook(&cfg->nested_id, err)) return false;
     return true;
 }
@@ -270,6 +291,7 @@ void NestedConfig_print(const NestedConfig_t *cfg, FILE *f) {
 }
 
 static void NestedConfig_ini_handler_recursive(cfg_common_context_t *ctx, const char *key, const char *val, char **parts, int num_parts, int depth) {
+    (void)parts; (void)depth;
     if (num_parts == 0) {
         if (strcmp(key, "nested_id") == 0) {
             ((NestedConfig_t*)ctx->cfg)->nested_id = strtoll(val, NULL, 10);
@@ -320,8 +342,9 @@ static void NestedConfig_ini_handler(void *user, const char *sec, const char *ke
     strncpy(sec_copy, sec, sizeof(sec_copy) - 1);
     sec_copy[sizeof(sec_copy) - 1] = '\0';
     char *parts[32]; int num_parts = 0;
-    char *token = strtok(sec_copy, ".");
-    while(token && num_parts < 32) { parts[num_parts++] = token; token = strtok(NULL, "."); }
+    char *s = sec_copy;
+    char *token = cfg_next_token(&s, ".");
+    while(token && num_parts < 32) { parts[num_parts++] = token; token = cfg_next_token(&s, "."); }
 
     if (num_parts == 0 || strcmp(parts[0], "NestedConfig") != 0) return;
     for (int i = 0; i < num_parts - 1; i++) parts[i] = parts[i+1];
@@ -355,6 +378,7 @@ void NestedConfig_free(NestedConfig_t *cfg) {
 
 bool TestSuite_validate(const TestSuite_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
+    (void)err;
     if (cfg->project_name == NULL) { cfg_set_error(err, "required field missing", "project_name", 0); return false; }
     if (cfg->project_name != NULL && strlen(cfg->project_name) < 3) { cfg_set_error(err, "string too short", "project_name", 0); return false; }
     if (cfg->project_name != NULL && !cfg_pattern_0_match(cfg->project_name)) { cfg_set_error(err, "pattern mismatch", "project_name", 0); return false; }
@@ -365,6 +389,7 @@ bool TestSuite_validate(const TestSuite_t *cfg, cfg_error_t *err) {
 
 bool level1_validate(const level1_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
+    (void)err;
     if (cfg->factor < 0.000000) { cfg_set_error(err, "value too small", "factor", 0); return false; }
     if (cfg->factor > 1.000000) { cfg_set_error(err, "value too large", "factor", 0); return false; }
     if (!level2_validate(&cfg->level2, err)) return false;
@@ -373,12 +398,14 @@ bool level1_validate(const level1_t *cfg, cfg_error_t *err) {
 
 bool level2_validate(const level2_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
+    (void)err;
     if (!level3_validate(&cfg->level3, err)) return false;
     return true;
 }
 
 bool level3_validate(const level3_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
+    (void)err;
     if (cfg->log_file != NULL && !CFG_FILE_EXISTS(cfg->log_file)) { cfg_set_error(err, "file does not exist", "log_file", 0); return false; }
     if (cfg->debug_mode == true) {
         if (cfg->log_file == NULL) { cfg_set_error(err, "field required by condition missing", "log_file", 0); return false; }
@@ -389,6 +416,7 @@ bool level3_validate(const level3_t *cfg, cfg_error_t *err) {
 
 bool level4_validate(const level4_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
+    (void)err;
     if (cfg->tags.count < 1) { cfg_set_error(err, "array too short", "tags", 0); return false; }
     if (!test_array_hook(&cfg->tags, err)) return false;
     return true;
@@ -428,6 +456,7 @@ void TestSuite_print(const TestSuite_t *cfg, FILE *f) {
 }
 
 static void TestSuite_ini_handler_recursive(cfg_common_context_t *ctx, const char *key, const char *val, char **parts, int num_parts, int depth) {
+    (void)parts; (void)depth;
     if (num_parts == 0) {
         if (strcmp(key, "project_name") == 0) {
             ((TestSuite_t*)ctx->cfg)->project_name = cfg_intern_string(ctx, val);
@@ -617,8 +646,9 @@ static void TestSuite_ini_handler(void *user, const char *sec, const char *key, 
     strncpy(sec_copy, sec, sizeof(sec_copy) - 1);
     sec_copy[sizeof(sec_copy) - 1] = '\0';
     char *parts[32]; int num_parts = 0;
-    char *token = strtok(sec_copy, ".");
-    while(token && num_parts < 32) { parts[num_parts++] = token; token = strtok(NULL, "."); }
+    char *s = sec_copy;
+    char *token = cfg_next_token(&s, ".");
+    while(token && num_parts < 32) { parts[num_parts++] = token; token = cfg_next_token(&s, "."); }
 
     if (num_parts == 0 || strcmp(parts[0], "TestSuite") != 0) return;
     for (int i = 0; i < num_parts - 1; i++) parts[i] = parts[i+1];
@@ -658,6 +688,7 @@ void TestSuite_free(TestSuite_t *cfg) {
 
 bool EdgeCaseTest_validate(const EdgeCaseTest_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
+    (void)err;
     if (!test_hook(cfg->hook_field, err)) return false;
     if (cfg->int_array.count < 2) { cfg_set_error(err, "array too short", "int_array", 0); return false; }
     if (!NestedConfig_validate(&cfg->sub, err)) return false;
@@ -667,6 +698,7 @@ bool EdgeCaseTest_validate(const EdgeCaseTest_t *cfg, cfg_error_t *err) {
 
 bool weird_validate(const weird_t *cfg, cfg_error_t *err) {
     if (!cfg) return false;
+    (void)err;
     return true;
 }
 
@@ -706,6 +738,7 @@ void EdgeCaseTest_print(const EdgeCaseTest_t *cfg, FILE *f) {
 }
 
 static void EdgeCaseTest_ini_handler_recursive(cfg_common_context_t *ctx, const char *key, const char *val, char **parts, int num_parts, int depth) {
+    (void)parts; (void)depth;
     if (num_parts == 0) {
         if (strcmp(key, "empty_str") == 0) {
             ((EdgeCaseTest_t*)ctx->cfg)->empty_str = cfg_intern_string(ctx, val);
@@ -869,8 +902,9 @@ static void EdgeCaseTest_ini_handler(void *user, const char *sec, const char *ke
     strncpy(sec_copy, sec, sizeof(sec_copy) - 1);
     sec_copy[sizeof(sec_copy) - 1] = '\0';
     char *parts[32]; int num_parts = 0;
-    char *token = strtok(sec_copy, ".");
-    while(token && num_parts < 32) { parts[num_parts++] = token; token = strtok(NULL, "."); }
+    char *s = sec_copy;
+    char *token = cfg_next_token(&s, ".");
+    while(token && num_parts < 32) { parts[num_parts++] = token; token = cfg_next_token(&s, "."); }
 
     if (num_parts == 0 || strcmp(parts[0], "EdgeCaseTest") != 0) return;
     for (int i = 0; i < num_parts - 1; i++) parts[i] = parts[i+1];
