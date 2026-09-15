@@ -140,12 +140,6 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
         fprintf(f, "}\n\n");
     }
 
-    fprintf(f, "static void cfg_set_error(cfg_error_t *err, const char *msg, const char *field, size_t line) {\n");
-    fprintf(f, "    if (!err) return;\n");
-    fprintf(f, "    if (msg) { strncpy(err->message, msg, sizeof(err->message) - 1); err->message[sizeof(err->message) - 1] = '\\0'; }\n");
-    fprintf(f, "    if (field) { strncpy(err->field, field, sizeof(err->field) - 1); err->field[sizeof(err->field) - 1] = '\\0'; }\n");
-    fprintf(f, "    err->line = line;\n");
-    fprintf(f, "}\n\n");
 
     fprintf(f, "typedef void (*cfg_ini_cb)(void *user, const char *sec, const char *key, const char *val);\n");
     fprintf(f, "static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, void *user, cfg_error_t *err) {\n");
@@ -233,6 +227,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
     fprintf(f, "#ifdef __cplusplus\nextern \"C\" {\n#endif\n\n");
     
     fprintf(f, "#include <stdio.h>\n");
+    fprintf(f, "#include <string.h>\n");
     if (tracker.uses_int) fprintf(f, "#include <stdint.h>\n");
     if (tracker.uses_bool) fprintf(f, "#include <stdbool.h>\n");
     if (tracker.uses_size_t) fprintf(f, "#include <stddef.h>\n");
@@ -249,6 +244,13 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
     fprintf(f, "    char field[256];\n");
     fprintf(f, "    size_t line;\n");
     fprintf(f, "} cfg_error_t;\n\n");
+
+    fprintf(f, "static inline void cfg_set_error(cfg_error_t *err, const char *msg, const char *field, size_t line) {\n");
+    fprintf(f, "    if (!err) return;\n");
+    fprintf(f, "    if (msg) { strncpy(err->message, msg, sizeof(err->message) - 1); err->message[sizeof(err->message) - 1] = '\\0'; }\n");
+    fprintf(f, "    if (field) { strncpy(err->field, field, sizeof(err->field) - 1); err->field[sizeof(err->field) - 1] = '\\0'; }\n");
+    fprintf(f, "    err->line = line;\n");
+    fprintf(f, "}\n\n");
 
     AstProgram *prog = &ctx->program->data.program;
     if (prog->imports) {
