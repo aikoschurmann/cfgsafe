@@ -221,21 +221,19 @@ static AstNode *parse_field_decl(Parser *p, ParseError *err) {
     AstNode *type = parse_type_expr(p, err);
     if (!type) return NULL;
 
-    if (!consume(p, TOKEN_LBRACE)) {
-        create_parse_error(err, p, "expected '{' for property block", current_token(p));
-        return NULL;
-    }
-
     AstNode *n = new_node_or_err(p, AST_FIELD_DECL, err, "OOM field");
     if (!n) return NULL;
     n->data.field_decl.name = name->record;
     n->data.field_decl.type = type;
     n->data.field_decl.properties = alloc_dynarray(p, err, sizeof(AstNode*), 4, "OOM properties");
 
-    while (p->current < p->end && !parser_match(p, TOKEN_RBRACE)) {
-        AstNode *prop = parse_property_decl(p, err);
-        if (!prop) return NULL;
-        dynarray_push_value(n->data.field_decl.properties, &prop);
+    if (parser_match(p, TOKEN_LBRACE)) {
+        while (p->current < p->end && !parser_match(p, TOKEN_RBRACE)) {
+            AstNode *prop = parse_property_decl(p, err);
+            if (!prop) return NULL;
+            dynarray_push_value(n->data.field_decl.properties, &prop);
+            parser_match(p, TOKEN_COMMA);
+        }
     }
     
     Token *end = peek(p, -1);
