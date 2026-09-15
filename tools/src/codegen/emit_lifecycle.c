@@ -174,7 +174,7 @@ static void emit_ini_handler_body(CodegenContext *ctx, FILE *f, AstNode *node, c
                         emit_indent(f, target_depth + 3); fprintf(f, "cfg_parse_array_int(ctx, val, (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
                     } else if (strcmp(elem_tname, "string") == 0 || strcmp(elem_tname, "path") == 0) {
                         emit_indent(f, target_depth + 3); fprintf(f, "cfg_parse_array_string(ctx, val, (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
-                    } else {
+                    } else if (!is_schema_name(ctx, elem_tname)) {
                         // Fallback or other types...
                         emit_indent(f, target_depth + 3); fprintf(f, "cfg_parse_array_string(ctx, val, (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
                     }
@@ -211,6 +211,41 @@ static void emit_ini_handler_body(CodegenContext *ctx, FILE *f, AstNode *node, c
                     AstNode *target_schema = get_schema_by_name(ctx, tname);
                     emit_ini_handler_body(ctx, f, target_schema, new_prefix, tname, target_depth + 1);
                     emit_indent(f, target_depth + 1); fprintf(f, "}\n");
+                }
+            } else if (type_node->data.ast_type.kind == AST_TYPE_ARRAY) {
+                AstNode *elem = type_node->data.ast_type.u.array.elem;
+                if (elem->data.ast_type.kind == AST_TYPE_PRIMITIVE) {
+                    const char *elem_tname = get_str(elem->data.ast_type.u.primitive.name);
+                    if (is_schema_name(ctx, elem_tname)) {
+                        const char *fname = get_str(item->data.field_decl.name);
+                        emit_indent(f, target_depth + 1);
+                        fprintf(f, "if (%d < num_parts && strcmp(parts[%d], \"%s\") == 0) {\n", target_depth, target_depth, fname);
+                        
+                        emit_indent(f, target_depth + 2);
+                        fprintf(f, "if (!key && !val && %d == num_parts - 1) {\n", target_depth);
+                        emit_indent(f, target_depth + 3); fprintf(f, "size_t old_count = %s%s.count;\n", prefix, fname);
+                        emit_indent(f, target_depth + 3); fprintf(f, "%s_t *new_data = (%s_t*)cfg_pool_alloc(&ctx->pool, (old_count + 1) * sizeof(%s_t));\n", elem_tname, elem_tname, elem_tname);
+                        emit_indent(f, target_depth + 3); fprintf(f, "if (old_count > 0) memcpy(new_data, %s%s.data, old_count * sizeof(%s_t));\n", prefix, fname, elem_tname);
+                        emit_indent(f, target_depth + 3); fprintf(f, "memset(&new_data[old_count], 0, sizeof(%s_t));\n", elem_tname);
+                        emit_indent(f, target_depth + 3); fprintf(f, "%s%s.data = new_data;\n", prefix, fname);
+                        emit_indent(f, target_depth + 3); fprintf(f, "%s%s.count = old_count + 1;\n", prefix, fname);
+                        
+                        char new_prefix[256];
+                        snprintf(new_prefix, sizeof(new_prefix), "%s%s.data[old_count].", prefix, fname);
+                        AstNode *target_schema = get_schema_by_name(ctx, elem_tname);
+                        emit_default_initialization_recursive(ctx, f, target_schema, new_prefix, "ctx");
+
+                        emit_indent(f, target_depth + 3); fprintf(f, "return;\n");
+                        emit_indent(f, target_depth + 2); fprintf(f, "}\n");
+                        
+                        emit_indent(f, target_depth + 2);
+                        fprintf(f, "if (key && val && %s%s.count > 0) {\n", prefix, fname);
+                        snprintf(new_prefix, sizeof(new_prefix), "%s%s.data[%s%s.count - 1].", prefix, fname, prefix, fname);
+                        emit_ini_handler_body(ctx, f, target_schema, new_prefix, elem_tname, target_depth + 1);
+                        emit_indent(f, target_depth + 2); fprintf(f, "}\n");
+                        
+                        emit_indent(f, target_depth + 1); fprintf(f, "}\n");
+                    }
                 }
             }
         }

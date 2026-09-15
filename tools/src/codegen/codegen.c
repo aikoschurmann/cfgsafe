@@ -150,12 +150,15 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
     fprintf(f, "        line_num++; char *p = line; while(isspace(*p)) p++;\n");
     fprintf(f, "        if (*p == '\\0' || *p == ';' || *p == '#') continue;\n");
     fprintf(f, "        if (*p == '[') {\n");
-    fprintf(f, "            char *end = strchr(p, ']');\n");
+    fprintf(f, "            bool is_array = (*(p+1) == '[');\n");
+    fprintf(f, "            if (is_array) p++;\n");
+    fprintf(f, "            char *end = is_array ? strstr(p, \"]]\") : strchr(p, ']');\n");
     fprintf(f, "            if (end) {\n");
     fprintf(f, "                size_t len = end - (p + 1);\n");
     fprintf(f, "                if (len >= sizeof(section)) len = sizeof(section) - 1;\n");
     fprintf(f, "                strncpy(section, p + 1, len);\n");
     fprintf(f, "                section[len] = '\\0';\n");
+    fprintf(f, "                if (is_array) cb(user, section, NULL, NULL);\n");
     fprintf(f, "            } else { cfg_set_error(err, \"missing closing bracket for section\", section, line_num); success = false; }\n");
     fprintf(f, "        } else {\n");
     fprintf(f, "            char *eq = strchr(p, '=');\n");
@@ -228,8 +231,8 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
     
     fprintf(f, "#include <stdio.h>\n");
     fprintf(f, "#include <string.h>\n");
+    fprintf(f, "#include <stdbool.h>\n");
     if (tracker.uses_int) fprintf(f, "#include <stdint.h>\n");
-    if (tracker.uses_bool) fprintf(f, "#include <stdbool.h>\n");
     if (tracker.uses_size_t) fprintf(f, "#include <stddef.h>\n");
     
     fprintf(f, "\ntypedef enum {\n");

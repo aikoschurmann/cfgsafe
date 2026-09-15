@@ -146,6 +146,10 @@ int main(int argc, char **argv) {
             edge.int_array.count == 2 &&
             edge.int_array.data[0] == 10 &&
             edge.int_array.data[1] == 20 &&
+            edge.sources.count == 2 &&
+            strcmp(edge.sources.data[0].target, "nlohmann_json") == 0 &&
+            strcmp(edge.sources.data[1].target, "libuv") == 0 &&
+            edge.sources.data[1].options.count == 2 &&
             strcmp(edge.weird.key_with_dash, "some-value") == 0) {
             printf("PASSED: Handled diverse booleans, cross-schema, and nested fields.\n");
             tests_passed++;

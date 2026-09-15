@@ -1,5 +1,12 @@
 import "integration_hooks.h"
 
+schema GithubSource {
+    url: string
+    tag: string
+    target: string
+    options: string[]
+}
+
 schema NestedConfig {
     nested_id: int { 
         default: 99 
@@ -88,6 +95,8 @@ schema EdgeCaseTest {
     int_array: int[] {
         min_length: 2
     }
+
+    sources: GithubSource[]
 
     // Cross reference
     sub: NestedConfig {}

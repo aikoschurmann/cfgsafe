@@ -157,6 +157,16 @@ void emit_validation_function(UsageTracker *tracker, CodegenContext *ctx, FILE *
                 if (is_schema_name(ctx, tname)) {
                     fprintf(f, "    if (!%s_validate(&cfg->%s, err)) return false;\n", tname, get_str(item->data.field_decl.name));
                 }
+            } else if (type_node->node_type == AST_TYPE && type_node->data.ast_type.kind == AST_TYPE_ARRAY) {
+                AstNode *elem = type_node->data.ast_type.u.array.elem;
+                if (elem->data.ast_type.kind == AST_TYPE_PRIMITIVE) {
+                    const char *elem_tname = get_str(elem->data.ast_type.u.primitive.name);
+                    if (is_schema_name(ctx, elem_tname)) {
+                        fprintf(f, "    for (size_t i = 0; i < cfg->%s.count; i++) {\n", get_str(item->data.field_decl.name));
+                        fprintf(f, "        if (!%s_validate(&cfg->%s.data[i], err)) return false;\n", elem_tname, get_str(item->data.field_decl.name));
+                        fprintf(f, "    }\n");
+                    }
+                }
             }
         } else if (item->node_type == AST_SECTION_DECL) {
             fprintf(f, "    if (!%s_validate(&cfg->%s, err)) return false;\n", get_str(item->data.section_decl.name), get_str(item->data.section_decl.name));
