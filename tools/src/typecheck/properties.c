@@ -83,6 +83,10 @@ static bool is_property_valid_for_type(Type *type, const char *prop_name, Proper
                 return true;
             }
         }
+        if (strcmp(prop_name, "exists") == 0 && type->data.array.element_type->kind == TYPE_PRIMITIVE && type->data.array.element_type->data.primitive == PRIM_PATH) {
+            *out_def = PATH_PROPS[0];
+            return true;
+        }
     }
 
     return false;

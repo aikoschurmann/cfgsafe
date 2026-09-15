@@ -95,7 +95,14 @@ static void emit_validation_logic(UsageTracker *tracker, FILE *f, AstNode *field
                         prefix, fname, prefix, fname, prop->value->data.literal.value.int_val, fname);
             }
         } else if (strcmp(pname, "exists") == 0 && prop->value->data.literal.value.bool_val) {
-            fprintf(f, "    if (%s%s != NULL && !CFG_FILE_EXISTS(%s%s)) { cfg_set_error(err, \"file does not exist\", \"%s\", 0); return false; }\n", prefix, fname, prefix, fname, fname);
+            AstType *type = &field->data.field_decl.type->data.ast_type;
+            if (type->kind == AST_TYPE_ARRAY) {
+                fprintf(f, "    for (size_t i = 0; i < %s%s.count; i++) {\n", prefix, fname);
+                fprintf(f, "        if (%s%s.data[i] != NULL && !CFG_FILE_EXISTS(%s%s.data[i])) { cfg_set_error(err, \"file does not exist in array\", \"%s\", 0); return false; }\n", prefix, fname, prefix, fname, fname);
+                fprintf(f, "    }\n");
+            } else {
+                fprintf(f, "    if (%s%s != NULL && !CFG_FILE_EXISTS(%s%s)) { cfg_set_error(err, \"file does not exist\", \"%s\", 0); return false; }\n", prefix, fname, prefix, fname, fname);
+            }
         } else if (strcmp(pname, "pattern") == 0) {
             const char *pattern = get_str(prop->value->data.literal.value.string_val);
             int idx = get_regex_index(tracker, pattern);
@@ -179,6 +186,11 @@ void emit_validation_prototypes(FILE *f, AstNode *node, const char *name) {
     }
 }
 
+static void print_escaped_char(FILE *f, char c) {
+    if (c == '\'' || c == '\\') fprintf(f, "\\%c", c);
+    else fprintf(f, "%c", c);
+}
+
 static void emit_char_class_check(FILE *f, const char **re) {
     const char *p = *re;
     bool negated = false;
@@ -188,11 +200,29 @@ static void emit_char_class_check(FILE *f, const char **re) {
     bool first = true;
     while (*p && *p != ']') {
         if (!first) fprintf(f, " %s ", negated ? "&&" : "||");
+        
+        char c1 = *p;
+        if (c1 == '\\' && *(p+1) != '\0' && *(p+1) != ']') {
+            c1 = *(++p);
+        }
+        
         if (*(p+1) == '-' && *(p+2) != ']' && *(p+2) != '\0') {
-            fprintf(f, "(c %s '%c' %s c %s '%c')", negated? "<" : ">=", *p, negated? "||" : "&&", negated? ">" : "<=", *(p+2));
-            p += 3;
+            char c2 = *(p+2);
+            if (c2 == '\\' && *(p+3) != '\0' && *(p+3) != ']') {
+                c2 = *(p+3);
+                p += 4;
+            } else {
+                p += 3;
+            }
+            fprintf(f, "(c %s '", negated? "<" : ">=");
+            print_escaped_char(f, c1);
+            fprintf(f, "' %s c %s '", negated? "||" : "&&", negated? ">" : "<=");
+            print_escaped_char(f, c2);
+            fprintf(f, "')");
         } else {
-            fprintf(f, "c %s '%c'", negated ? "!=" : "==", *p);
+            fprintf(f, "c %s '", negated ? "!=" : "==");
+            print_escaped_char(f, c1);
+            fprintf(f, "'");
             p++;
         }
         first = false;
@@ -252,13 +282,24 @@ void emit_regex_validator(FILE *f, const char *re_str, int idx) {
             re_p++;
         } else {
             char target = *re_p;
-            fprintf(f, "%sif (*p != '%c') %s;\n", indent, target, anchored_start ? "return false" : "goto next");
+            if (target == '\\' && *(re_p+1) != '\0') {
+                target = *(++re_p);
+            }
+            
+            fprintf(f, "%sif (*p != '", indent);
+            if (target == '\'' || target == '\\') fprintf(f, "\\");
+            fprintf(f, "%c') %s;\n", target, anchored_start ? "return false" : "goto next");
+            
             fprintf(f, "%sp++;\n", indent);
             if (*(re_p+1) == '+') {
-                fprintf(f, "%swhile (*p == '%c') p++;\n", indent, target);
+                fprintf(f, "%swhile (*p == '", indent);
+                if (target == '\'' || target == '\\') fprintf(f, "\\");
+                fprintf(f, "%c') p++;\n", target);
                 re_p += 2;
             } else if (*(re_p+1) == '*') {
-                fprintf(f, "%sp--; while (*p == '%c') p++;\n", indent, target);
+                fprintf(f, "%sp--; while (*p == '", indent);
+                if (target == '\'' || target == '\\') fprintf(f, "\\");
+                fprintf(f, "%c') p++;\n", target);
                 re_p += 2;
             } else {
                 re_p++;
