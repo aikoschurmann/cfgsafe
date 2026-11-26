@@ -216,6 +216,7 @@ typedef struct {
 | `CFG_KIND_SYNTAX` | Malformed INI line | `CFG_ERR_SYNTAX` |
 | `CFG_KIND_INVALID_VALUE` | Value not valid for the field's type or enum | `CFG_ERR_VALIDATION` |
 | `CFG_KIND_UNKNOWN_KEY` | Unknown INI key or section, or unknown `--Schema.` option | `CFG_ERR_VALIDATION` |
+| `CFG_KIND_DUPLICATE_KEY` | The same INI key is set twice | `CFG_ERR_SYNTAX` |
 | `CFG_KIND_MISSING` | Required field not provided, or option given without a value | `CFG_ERR_VALIDATION` |
 | `CFG_KIND_CONSTRAINT` | `range`, `min`/`max`, length, `pattern` or `exists` failed | `CFG_ERR_VALIDATION` |
 | `CFG_KIND_HOOK` | A validation hook returned `false` | `CFG_ERR_VALIDATION` |

@@ -14,7 +14,7 @@ void emit_array_parse(FILE *f, const char *indent, AstNode *elem_type, const cha
     }
     fprintf(f, "%scfg_parse_array(%s, %s, (void**)&%s.data, &%s.count, sizeof(*%s.data), %s, \"%s\", \"%s\", %s, %s);\n",
             indent, ctx_expr, val, lhs, lhs, lhs, fn, kind, field, origin, secret ? "true" : "false");
-    fprintf(f, "%scfg_note_line(%s, &%s);\n", indent, ctx_expr, lhs);
+    fprintf(f, "%scfg_note_value(%s, &%s, \"%s\");\n", indent, ctx_expr, lhs, field);
 }
 
 void emit_enum_parse(FILE *f, const char *indent, AstType *enum_type, const char *lhs, const char *enum_prefix,
@@ -30,7 +30,7 @@ void emit_enum_parse(FILE *f, const char *indent, AstType *enum_type, const char
         fprintf(f, "%s%s", (k == 0 ? "" : ", "), get_str(*(InternResult**)dynarray_get(members, k)));
     }
     fprintf(f, "\", %s);\n", origin);
-    fprintf(f, "%scfg_note_line(%s, &%s);\n", indent, ctx_expr, lhs);
+    fprintf(f, "%scfg_note_value(%s, &%s, \"%s\");\n", indent, ctx_expr, lhs, field);
 }
 
 void emit_scalar_parse(FILE *f, const char *indent, const char *tname, const char *lhs,
@@ -47,7 +47,7 @@ void emit_scalar_parse(FILE *f, const char *indent, const char *tname, const cha
     } else if (strcmp(tname, "string") == 0 || strcmp(tname, "path") == 0) {
         fprintf(f, "%s%s = cfg_intern_string(%s, %s);\n", indent, lhs, ctx_expr, val);
     }
-    fprintf(f, "%scfg_note_line(%s, &%s);\n", indent, ctx_expr, lhs);
+    fprintf(f, "%scfg_note_value(%s, &%s, \"%s\");\n", indent, ctx_expr, lhs, field);
 }
 
 static void emit_default_initialization(FILE *f, AstNode *field, const char *prefix, const char *parent_name, const char *ctx_name) {

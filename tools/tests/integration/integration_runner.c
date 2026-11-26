@@ -904,6 +904,30 @@ int main(int argc, char **argv) {
         }
     }
 
+    // Test 66: A key set twice in the same section (here via a repeated [TestSuite] header)
+    total_tests++;
+    printf("\nTest %d: Duplicate Key...\n", total_tests);
+    tests_passed += expect_load_error("integration_duplicate_key.ini", 1, (const char**)argv, CFG_ERR_SYNTAX, "version",
+                                      "duplicate key 'version' (already set on line 3)", 9);
+    if (TestSuite_load(&cfg, "integration_duplicate_key.ini", 1, (const char**)argv, &err) != CFG_ERR_SYNTAX || err.kind != CFG_KIND_DUPLICATE_KEY) {
+        printf("FAILED: kind %d\n", (int)err.kind);
+        tests_passed--;
+    }
+
+    // Test 67: Entries of an array of structs may repeat keys; overriding on the CLI is not a duplicate
+    total_tests++;
+    printf("\nTest %d: Repeated Keys That Are Not Duplicates...\n", total_tests);
+    {
+        const char *override[] = { "program", "--EdgeCaseTest.flag_true=false" };
+        if (EdgeCaseTest_load(&edge, "integration_edgecases.ini", 2, override, &err) == CFG_SUCCESS) {
+            printf("PASSED: [[...]] entries and CLI overrides accepted.\n");
+            tests_passed++;
+            EdgeCaseTest_free(&edge);
+        } else {
+            printf("FAILED: %s (field %s, line %zu)\n", err.message, err.field, err.line);
+        }
+    }
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 

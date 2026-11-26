@@ -110,6 +110,8 @@ Keys that do not correspond to a schema field, inside any section that belongs t
 #include "config.h"
 ```
 
+Setting the same key twice in a section, including through a repeated section header, fails with `CFG_ERR_SYNTAX` (`duplicate key 'port' (already set on line 3)`). Entries of an array of structs (`[[...]]`) each have their own keys, and environment and command-line values may override INI values. Define `CFG_ALLOW_DUPLICATE_KEYS` to let the last value win instead.
+
 ### Enumerations
 Use the literal name defined in the schema (case-sensitive).
 
