@@ -418,6 +418,34 @@ int main(int argc, char **argv) {
     const char *bad_cli[] = { "program", "--TestSuite.version", "ten" };
     tests_passed += expect_load_error("integration_perfect.ini", 3, bad_cli, CFG_ERR_VALIDATION, "version", "invalid integer value 'ten' (from command line)", 0);
 
+    // Test 29: Typed arrays (float, bool, ipv4) store values of their element type
+    total_tests++;
+    printf("\nTest %d: Typed Arrays (float, bool, ipv4)...\n", total_tests);
+    if (EdgeCaseTest_load(&edge, "integration_edgecases.ini", 1, (const char**)argv, &err) == CFG_SUCCESS) {
+        if (edge.float_array.count == 2 && edge.float_array.data[0] == 1.5 && edge.float_array.data[1] == -2.25 &&
+            edge.bool_array.count == 2 && edge.bool_array.data[0] == true && edge.bool_array.data[1] == false &&
+            edge.ip_array.count == 2 && edge.ip_array.data[0].octets[0] == 10 && edge.ip_array.data[1].octets[3] == 254) {
+            printf("PASSED: Typed array elements parsed correctly.\n");
+            tests_passed++;
+        } else {
+            printf("FAILED: Typed array mismatch.\n");
+        }
+        EdgeCaseTest_free(&edge);
+    } else {
+        printf("FAILED: Load failed. Error: %s, Field: %s\n", err.message, err.field);
+    }
+
+    // Test 30: Malformed element in an int array
+    total_tests++;
+    printf("\nTest %d: Strict Array Element Parsing...\n", total_tests);
+    if (EdgeCaseTest_load(&edge, "integration_bad_array_elem.ini", 1, (const char**)argv, &err) == CFG_ERR_VALIDATION &&
+        strcmp(err.field, "int_array") == 0 && strstr(err.message, "invalid integer value 'x'") && err.line == 2) {
+        printf("PASSED: %s (line %zu)\n", err.message, err.line);
+        tests_passed++;
+    } else {
+        printf("FAILED: Expected invalid integer error. Got field '%s', message '%s'\n", err.field, err.message);
+    }
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 
