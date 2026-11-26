@@ -40,6 +40,8 @@ void emit_cli_parser_recursive(CodegenContext *ctx, FILE *f, AstNode *node, cons
                 }
 
                 /* Primitive field handling */
+                char lhs[600];
+                snprintf(lhs, sizeof(lhs), "%s%s", prefix, fname);
                 fprintf(f, "    if (strcmp(arg, \"--%s\") == 0", full_path);
                 if (short_flag) fprintf(f, " || (arg[0] == '-' && arg[1] == '%c' && arg[2] == '\\0')", short_flag[0]);
                 fprintf(f, ") {\n");
@@ -49,10 +51,7 @@ void emit_cli_parser_recursive(CodegenContext *ctx, FILE *f, AstNode *node, cons
                 } else {
                     fprintf(f, "        if (i + 1 < argc) {\n");
                     fprintf(f, "            const char *val = argv[++i];\n");
-                    if (strcmp(tname, "int") == 0) fprintf(f, "            %s%s = strtoll(val, NULL, 10);\n", prefix, fname);
-                    else if (strcmp(tname, "float") == 0) fprintf(f, "            %s%s = strtod(val, NULL);\n", prefix, fname);
-                    else if (strcmp(tname, "string") == 0 || strcmp(tname, "path") == 0) fprintf(f, "            %s%s = cfg_intern_string(ctx, val);\n", prefix, fname);
-                    else if (strcmp(tname, "ipv4") == 0) fprintf(f, "            cfg_parse_ipv4(val, &%s%s);\n", prefix, fname);
+                    emit_scalar_parse(f, "            ", tname, lhs, "val", fname, "ctx", "\"command line\"");
                     fprintf(f, "            *index = i; return true;\n");
                     fprintf(f, "        }\n");
                 }
@@ -62,10 +61,7 @@ void emit_cli_parser_recursive(CodegenContext *ctx, FILE *f, AstNode *node, cons
                 if (strcmp(tname, "bool") != 0) {
                     fprintf(f, "    if (strncmp(arg, \"--%s=\", %zu) == 0) {\n", full_path, strlen(full_path) + 3);
                     fprintf(f, "        const char *val = arg + %zu;\n", strlen(full_path) + 3);
-                    if (strcmp(tname, "int") == 0) fprintf(f, "        %s%s = strtoll(val, NULL, 10);\n", prefix, fname);
-                    else if (strcmp(tname, "float") == 0) fprintf(f, "        %s%s = strtod(val, NULL);\n", prefix, fname);
-                    else if (strcmp(tname, "string") == 0 || strcmp(tname, "path") == 0) fprintf(f, "        %s%s = cfg_intern_string(ctx, val);\n", prefix, fname);
-                    else if (strcmp(tname, "ipv4") == 0) fprintf(f, "        cfg_parse_ipv4(val, &%s%s);\n", prefix, fname);
+                    emit_scalar_parse(f, "        ", tname, lhs, "val", fname, "ctx", "\"command line\"");
                     fprintf(f, "        return true;\n");
                     fprintf(f, "    }\n");
                 }

@@ -51,7 +51,64 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
     fprintf(f, "    }\n");
     fprintf(f, "}\n\n");
 
-    fprintf(f, "typedef struct {\n    void *cfg;\n    cfg_pool_node_t *pool;\n} cfg_common_context_t;\n\n");
+    fputs(
+        "typedef struct {\n"
+        "    void *cfg;\n"
+        "    cfg_pool_node_t *pool;\n"
+        "    cfg_error_t *err;\n"
+        "    size_t line;\n"
+        "    cfg_status_t status;\n"
+        "} cfg_common_context_t;\n\n"
+        "/* Records the first error only; later errors are usually consequences of it. */\n"
+        "static void cfg_fail(cfg_common_context_t *ctx, cfg_status_t status, const char *msg, const char *field) {\n"
+        "    if (ctx->status != CFG_SUCCESS) return;\n"
+        "    ctx->status = status;\n"
+        "    cfg_set_error(ctx->err, msg, field, ctx->line);\n"
+        "}\n\n"
+        "static void cfg_fail_value(cfg_common_context_t *ctx, const char *kind, const char *field, const char *val, const char *origin) {\n"
+        "    char msg[512];\n"
+        "    if (origin) snprintf(msg, sizeof(msg), \"invalid %s value '%.200s' (from %s)\", kind, val, origin);\n"
+        "    else snprintf(msg, sizeof(msg), \"invalid %s value '%.200s'\", kind, val);\n"
+        "    cfg_fail(ctx, CFG_ERR_VALIDATION, msg, field);\n"
+        "}\n\n", f);
+
+    if (tracker->uses_int) {
+        fputs(
+            "static bool cfg_parse_int(const char *s, int64_t *out) {\n"
+            "    char *end;\n"
+            "    long long v;\n"
+            "    errno = 0;\n"
+            "    v = strtoll(s, &end, 10);\n"
+            "    if (end == s || errno == ERANGE) return false;\n"
+            "    while (isspace((unsigned char)*end)) end++;\n"
+            "    if (*end != '\\0') return false;\n"
+            "    *out = (int64_t)v;\n"
+            "    return true;\n"
+            "}\n\n", f);
+    }
+    if (tracker->uses_float) {
+        fputs(
+            "static bool cfg_parse_float(const char *s, double *out) {\n"
+            "    char *end;\n"
+            "    double v;\n"
+            "    errno = 0;\n"
+            "    v = strtod(s, &end);\n"
+            "    if (end == s || errno == ERANGE) return false;\n"
+            "    while (isspace((unsigned char)*end)) end++;\n"
+            "    if (*end != '\\0') return false;\n"
+            "    if (v != v || v - v != 0) return false; /* reject nan and inf */\n"
+            "    *out = v;\n"
+            "    return true;\n"
+            "}\n\n", f);
+    }
+    if (tracker->uses_bool) {
+        fputs(
+            "static bool cfg_parse_bool(const char *s, bool *out) {\n"
+            "    if (strcmp(s, \"true\") == 0 || strcmp(s, \"1\") == 0) { *out = true; return true; }\n"
+            "    if (strcmp(s, \"false\") == 0 || strcmp(s, \"0\") == 0) { *out = false; return true; }\n"
+            "    return false;\n"
+            "}\n\n", f);
+    }
 
     fprintf(f, "static char* cfg_next_token(char **str, const char *delim) {\n");
     fprintf(f, "    char *s = *str;\n");
@@ -132,22 +189,32 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
     fprintf(f, "}\n\n");
 
     if (tracker->uses_ipv4) {
-        fprintf(f, "static bool cfg_parse_ipv4(const char *s, cfg_ipv4_t *out) {\n");
-        fprintf(f, "    int octets[4];\n");
-        fprintf(f, "    if (sscanf(s, \"%%d.%%d.%%d.%%d\", &octets[0], &octets[1], &octets[2], &octets[3]) != 4) return false;\n");
-        fprintf(f, "    for (int i = 0; i < 4; i++) { if (octets[i] < 0 || octets[i] > 255) return false; out->octets[i] = (uint8_t)octets[i]; }\n");
-        fprintf(f, "    return true;\n");
-        fprintf(f, "}\n\n");
+        fputs(
+            "static bool cfg_parse_ipv4(const char *s, cfg_ipv4_t *out) {\n"
+            "    uint8_t octets[4];\n"
+            "    for (int i = 0; i < 4; i++) {\n"
+            "        int v = 0, digits = 0;\n"
+            "        while (*s >= '0' && *s <= '9') {\n"
+            "            v = v * 10 + (*s++ - '0');\n"
+            "            if (++digits > 3) return false;\n"
+            "        }\n"
+            "        if (digits == 0 || v > 255) return false;\n"
+            "        octets[i] = (uint8_t)v;\n"
+            "        if (i < 3 && *s++ != '.') return false;\n"
+            "    }\n"
+            "    if (*s != '\\0') return false;\n"
+            "    memcpy(out->octets, octets, sizeof(octets));\n"
+            "    return true;\n"
+            "}\n\n", f);
     }
 
 
-    fprintf(f, "typedef void (*cfg_ini_cb)(void *user, const char *sec, const char *key, const char *val);\n");
-    fprintf(f, "static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, void *user, cfg_error_t *err) {\n");
-    fprintf(f, "    FILE *f = fopen(filename, \"r\"); if (!f) { cfg_set_error(err, \"failed to open file\", filename, 0); return CFG_ERR_OPEN_FILE; }\n");
+    fprintf(f, "typedef void (*cfg_ini_cb)(cfg_common_context_t *ctx, const char *sec, const char *key, const char *val);\n");
+    fprintf(f, "static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, cfg_common_context_t *ctx) {\n");
+    fprintf(f, "    FILE *f = fopen(filename, \"r\"); if (!f) { cfg_fail(ctx, CFG_ERR_OPEN_FILE, \"failed to open file\", filename); return ctx->status; }\n");
     fprintf(f, "    char line[4096], section[256] = \"\";\n");
-    fprintf(f, "    size_t line_num = 0; bool success = true;\n");
     fprintf(f, "    while (fgets(line, sizeof(line), f)) {\n");
-    fprintf(f, "        line_num++; char *p = line; while(isspace(*p)) p++;\n");
+    fprintf(f, "        ctx->line++; char *p = line; while(isspace(*p)) p++;\n");
     fprintf(f, "        if (*p == '\\0' || *p == ';' || *p == '#') continue;\n");
     fprintf(f, "        if (*p == '[') {\n");
     fprintf(f, "            bool is_array = (*(p+1) == '[');\n");
@@ -158,8 +225,8 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
     fprintf(f, "                if (len >= sizeof(section)) len = sizeof(section) - 1;\n");
     fprintf(f, "                strncpy(section, p + 1, len);\n");
     fprintf(f, "                section[len] = '\\0';\n");
-    fprintf(f, "                if (is_array) cb(user, section, NULL, NULL);\n");
-    fprintf(f, "            } else { cfg_set_error(err, \"missing closing bracket for section\", section, line_num); success = false; }\n");
+    fprintf(f, "                if (is_array) cb(ctx, section, NULL, NULL);\n");
+    fprintf(f, "            } else { cfg_fail(ctx, CFG_ERR_SYNTAX, \"missing closing bracket for section\", section); }\n");
     fprintf(f, "        } else {\n");
     fprintf(f, "            char *eq = strchr(p, '=');\n");
     fprintf(f, "            if (eq) {\n");
@@ -192,14 +259,14 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
     fprintf(f, "                        *v_end = '\\0';\n");
     fprintf(f, "                    }\n");
     fprintf(f, "                }\n");
-    fprintf(f, "                cb(user, section, key, val);\n");
+    fprintf(f, "                cb(ctx, section, key, val);\n");
     fprintf(f, "            } else {\n");
-    fprintf(f, "                cfg_set_error(err, \"missing assignment operator\", p, line_num); success = false;\n");
+    fprintf(f, "                cfg_fail(ctx, CFG_ERR_SYNTAX, \"missing assignment operator\", p);\n");
     fprintf(f, "            }\n");
     fprintf(f, "        }\n");
     fprintf(f, "    }\n");
     fprintf(f, "    fclose(f);\n");
-    fprintf(f, "    return success ? CFG_SUCCESS : CFG_ERR_SYNTAX;\n");
+    fprintf(f, "    return ctx->status;\n");
     fprintf(f, "}\n\n");
 
 }
@@ -302,7 +369,8 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
     fprintf(f, "#include <stdlib.h>\n");
     fprintf(f, "#include <string.h>\n");
     fprintf(f, "#include <ctype.h>\n");
-    
+    fprintf(f, "#include <errno.h>\n");
+
     if (tracker.uses_access) {
         fprintf(f, "\n#ifndef CFG_FILE_EXISTS\n");
         fprintf(f, "#ifdef _WIN32\n");
@@ -329,8 +397,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         emit_print_function(ctx, f, schema, schema_name);
         emit_recursive_ini_handler(ctx, f, schema, schema_name);
 
-        fprintf(f, "static void %s_ini_handler(void *user, const char *sec, const char *key, const char *val) {\n", schema_name);
-        fprintf(f, "    cfg_common_context_t *ctx = (cfg_common_context_t*)user;\n");
+        fprintf(f, "static void %s_ini_handler(cfg_common_context_t *ctx, const char *sec, const char *key, const char *val) {\n", schema_name);
         fprintf(f, "    char sec_copy[256];\n");
         fprintf(f, "    strncpy(sec_copy, sec, sizeof(sec_copy) - 1);\n");
         fprintf(f, "    sec_copy[sizeof(sec_copy) - 1] = '\\0';\n");
@@ -349,20 +416,23 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "cfg_status_t %s_load(%s_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err) {\n", schema_name, schema_name);
         fprintf(f, "    if (!cfg) return CFG_ERR_VALIDATION;\n");
         fprintf(f, "    memset(cfg, 0, sizeof(%s_t));\n", schema_name);
-        fprintf(f, "    cfg_common_context_t ctx = { cfg, NULL };\n");
+        fprintf(f, "    cfg_common_context_t ctx = { cfg, NULL, err, 0, CFG_SUCCESS };\n");
         fprintf(f, "    if (err) memset(err, 0, sizeof(cfg_error_t));\n");
         
         emit_default_initialization_recursive(ctx, f, schema, "cfg->", "&ctx");
 
-        fprintf(f, "    if (filename) {\n");
-        fprintf(f, "        cfg_status_t status = cfg_parse_ini(filename, %s_ini_handler, &ctx, err);\n", schema_name);
-        fprintf(f, "        if (status != CFG_SUCCESS) { cfg_pool_free(ctx.pool); return status; }\n");
+        fprintf(f, "    if (filename && cfg_parse_ini(filename, %s_ini_handler, &ctx) != CFG_SUCCESS) {\n", schema_name);
+        fprintf(f, "        cfg_pool_free(ctx.pool);\n");
+        fprintf(f, "        memset(cfg, 0, sizeof(%s_t));\n", schema_name);
+        fprintf(f, "        return ctx.status;\n");
         fprintf(f, "    }\n");
+        fprintf(f, "    ctx.line = 0;\n");
 
         emit_env_overrides_recursive(ctx, &tracker, f, schema, "cfg->", "&ctx");
-        
+
+        fprintf(f, "    %s_parse_cli_ctx(&ctx, argc, argv);\n", schema_name);
         fprintf(f, "    cfg->internal_pool = ctx.pool;\n");
-        fprintf(f, "    %s_parse_cli(cfg, argc, argv);\n", schema_name);
+        fprintf(f, "    if (ctx.status != CFG_SUCCESS) { %s_free(cfg); return ctx.status; }\n", schema_name);
 
         fprintf(f, "    if (!%s_validate(cfg, err)) { %s_free(cfg); return CFG_ERR_VALIDATION; }\n", schema_name, schema_name);
         fprintf(f, "    return CFG_SUCCESS;\n");

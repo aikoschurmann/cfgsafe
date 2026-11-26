@@ -4,6 +4,29 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define ANY_LINE ((size_t)-1)
+
+/* Loads `ini` into a TestSuite and checks that it fails with the given status,
+ * field, message fragment and (unless ANY_LINE) line number. */
+static int expect_load_error(const char *ini, int argc, const char **argv, cfg_status_t want,
+                             const char *field, const char *msg_part, size_t line) {
+    TestSuite_t cfg;
+    cfg_error_t err;
+    cfg_status_t st = TestSuite_load(&cfg, ini, argc, argv, &err);
+    if (st == CFG_SUCCESS) {
+        TestSuite_free(&cfg);
+        printf("FAILED: load unexpectedly succeeded.\n");
+        return 0;
+    }
+    if (st == want && strcmp(err.field, field) == 0 && strstr(err.message, msg_part) &&
+        (line == ANY_LINE || err.line == line)) {
+        printf("PASSED: %s (field: %s, line: %zu)\n", err.message, err.field, err.line);
+        return 1;
+    }
+    printf("FAILED: got status %d, field '%s', line %zu, message '%s'\n", (int)st, err.field, err.line, err.message);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     TestSuite_t cfg;
     cfg_error_t err;
@@ -114,13 +137,7 @@ int main(int argc, char **argv) {
     // Test 7: Type Mismatch (String where Int expected)
     total_tests++;
     printf("\nTest %d: Type Mismatch (String for Int)...\n", total_tests);
-    if (TestSuite_load(&cfg, "integration_type_mismatch.ini", argc, (const char**)argv, &err) == CFG_ERR_VALIDATION) {
-        printf("PASSED: Caught validation error for mismatched type. Field: %s\n", err.field);
-        tests_passed++;
-    } else {
-        printf("FAILED: Should have failed validation due to out-of-range (0).\n");
-        TestSuite_free(&cfg);
-    }
+    tests_passed += expect_load_error("integration_type_mismatch.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "version", "invalid integer value 'some-string'", 2);
 
     // Test 8: Missing File
     total_tests++;
@@ -368,6 +385,38 @@ int main(int argc, char **argv) {
     } else {
         printf("FAILED: Failed to load robustness INI. Error: %s, Field: %s\n", err.message, err.field);
     }
+
+    // Test 23: Trailing garbage after an integer
+    total_tests++;
+    printf("\nTest %d: Strict Integer Parsing (trailing garbage)...\n", total_tests);
+    tests_passed += expect_load_error("integration_bad_int.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "version", "invalid integer value '42abc'", 3);
+
+    // Test 24: Unrecognised boolean literal
+    total_tests++;
+    printf("\nTest %d: Strict Boolean Parsing...\n", total_tests);
+    tests_passed += expect_load_error("integration_bad_bool.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "debug_mode", "invalid boolean value 'yes'", 5);
+
+    // Test 25: Malformed float and IPv4 values
+    total_tests++;
+    printf("\nTest %d: Strict Float Parsing...\n", total_tests);
+    tests_passed += expect_load_error("integration_bad_float.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "factor", "invalid float value '0.5x'", 5);
+
+    total_tests++;
+    printf("\nTest %d: Strict IPv4 Parsing...\n", total_tests);
+    tests_passed += expect_load_error("integration_bad_ipv4.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "bind_addr", "invalid IPv4 value '10.0.0.1.5'", 5);
+
+    // Test 27: Malformed value from the environment
+    total_tests++;
+    printf("\nTest %d: Strict Parsing of Environment Values...\n", total_tests);
+    setenv("BIND_ADDR", "300.1.1.1", 1);
+    tests_passed += expect_load_error("integration_perfect.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "bind_addr", "(from env BIND_ADDR)", 0);
+    unsetenv("BIND_ADDR");
+
+    // Test 28: Malformed value from the command line
+    total_tests++;
+    printf("\nTest %d: Strict Parsing of CLI Values...\n", total_tests);
+    const char *bad_cli[] = { "program", "--TestSuite.version", "ten" };
+    tests_passed += expect_load_error("integration_perfect.ini", 3, bad_cli, CFG_ERR_VALIDATION, "version", "invalid integer value 'ten' (from command line)", 0);
 
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);

@@ -116,6 +116,7 @@ bool Name_validate(const Name_t *cfg, cfg_error_t *err);
 
 ### `Name_parse_cli`
 Internal helper exposed for modularity. Parses CLI arguments into the struct without running validation or loading other sources.
+Values that fail to parse are skipped silently here, since this function cannot report errors; `Name_load` parses the same arguments and does report them.
 ```c
 void Name_parse_cli(Name_t *cfg, int argc, const char **argv);
 ```
@@ -170,7 +171,9 @@ bool validate_port(const void *val, cfg_error_t *err) {
 - `CFG_SUCCESS`: No errors.
 - `CFG_ERR_OPEN_FILE`: INI file could not be read.
 - `CFG_ERR_SYNTAX`: Syntax error in the INI file.
-- `CFG_ERR_VALIDATION`: A built-in constraint or custom hook failed.
+- `CFG_ERR_VALIDATION`: A value could not be parsed as its field's type, or a built-in constraint or custom hook failed.
+
+Only the first error is reported.
 
 ### `cfg_error_t`
 ```c
