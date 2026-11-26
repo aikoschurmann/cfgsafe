@@ -523,6 +523,24 @@ int main(int argc, char **argv) {
         else printf("FAILED: %d regex cases wrong.\n", bad);
     }
 
+    // Test 38: Commas inside quoted array elements
+    total_tests++;
+    printf("\nTest %d: Quoted Commas in Arrays...\n", total_tests);
+    if (TestSuite_load(&cfg, "integration_quoted_commas.ini", 1, (const char**)argv, &err) == CFG_SUCCESS) {
+        if (cfg.level1.level2.level3.level4.tags.count == 3 &&
+            strcmp(cfg.level1.level2.level3.level4.tags.data[0], "a,b") == 0 &&
+            strcmp(cfg.level1.level2.level3.level4.tags.data[1], "c") == 0 &&
+            strcmp(cfg.level1.level2.level3.level4.tags.data[2], "d, e, f") == 0) {
+            printf("PASSED: Quoted elements kept their commas.\n");
+            tests_passed++;
+        } else {
+            printf("FAILED: Got %zu elements, [0] = '%s'\n", cfg.level1.level2.level3.level4.tags.count, cfg.level1.level2.level3.level4.tags.data[0]);
+        }
+        TestSuite_free(&cfg);
+    } else {
+        printf("FAILED: Load failed. Error: %s, Field: %s\n", err.message, err.field);
+    }
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 
