@@ -85,6 +85,8 @@ void track_usage(AstNode *node, UsageTracker *tracker) {
                 else if (strcmp(name, "bool") == 0) tracker->uses_bool = true;
                 else if (strcmp(name, "float") == 0) tracker->uses_float = true;
                 else if (strcmp(name, "ipv4") == 0) tracker->uses_ipv4 = true;
+            } else if (type->kind == AST_TYPE_ENUM) {
+                tracker->uses_enum = true;
             } else if (type->kind == AST_TYPE_ARRAY) {
                 tracker->uses_size_t = true;
                 AstType *elem = &type->u.array.elem->data.ast_type;

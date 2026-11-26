@@ -16,6 +16,21 @@ void emit_array_parse(FILE *f, const char *indent, AstNode *elem_type, const cha
             indent, ctx_expr, val, lhs, lhs, lhs, fn, kind, field, origin);
 }
 
+void emit_enum_parse(FILE *f, const char *indent, AstType *enum_type, const char *lhs, const char *enum_prefix,
+                     const char *val, const char *field, const char *ctx_expr, const char *origin) {
+    DynArray *members = enum_type->u.enum_type.enum_decl->data.enum_type.members;
+    for (size_t k = 0; k < members->count; k++) {
+        const char *mname = get_str(*(InternResult**)dynarray_get(members, k));
+        fprintf(f, "%s%sif (strcmp(%s, \"%s\") == 0) %s = %s_%s;\n",
+                indent, (k == 0 ? "" : "else "), val, mname, lhs, enum_prefix, mname);
+    }
+    fprintf(f, "%selse cfg_fail_enum(%s, \"%s\", %s, \"", indent, ctx_expr, field, val);
+    for (size_t k = 0; k < members->count; k++) {
+        fprintf(f, "%s%s", (k == 0 ? "" : ", "), get_str(*(InternResult**)dynarray_get(members, k)));
+    }
+    fprintf(f, "\", %s);\n", origin);
+}
+
 void emit_scalar_parse(FILE *f, const char *indent, const char *tname, const char *lhs,
                        const char *val, const char *field, const char *ctx_expr, const char *origin) {
     const char *fn = NULL, *kind = NULL;
@@ -185,14 +200,11 @@ static void emit_ini_handler_body(CodegenContext *ctx, FILE *f, AstNode *node, c
                 emit_indent(f, target_depth + 3);
                 emit_scalar_parse(f, "", get_str(type->u.primitive.name), lhs, "val", fname, "ctx", "NULL");
             } else if (type->kind == AST_TYPE_ENUM) {
-                DynArray *members = type->u.enum_type.enum_decl->data.enum_type.members;
-                for (size_t k = 0; k < members->count; k++) {
-                    InternResult *member = *(InternResult**)dynarray_get(members, k);
-                    const char *mname = get_str(member);
-                    emit_indent(f, target_depth + 3);
-                    fprintf(f, "%sif (strcmp(val, \"%s\") == 0) %s%s = %s_%s_%s;\n", 
-                        (k == 0 ? "" : "else "), mname, prefix, fname, parent_name, fname, mname);
-                }
+                char lhs[512], enum_prefix[512], indent[64];
+                snprintf(lhs, sizeof(lhs), "%s%s", prefix, fname);
+                snprintf(enum_prefix, sizeof(enum_prefix), "%s_%s", parent_name, fname);
+                snprintf(indent, sizeof(indent), "%*s", (target_depth + 3) * 4, "");
+                emit_enum_parse(f, indent, type, lhs, enum_prefix, "val", fname, "ctx", "NULL");
             } else if (type->kind == AST_TYPE_ARRAY) {
                 AstNode *elem = type->u.array.elem;
                 bool is_struct_array = elem->data.ast_type.kind == AST_TYPE_PRIMITIVE &&

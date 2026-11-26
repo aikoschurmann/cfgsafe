@@ -72,6 +72,15 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
         "    cfg_fail(ctx, CFG_ERR_VALIDATION, msg, field);\n"
         "}\n\n", f);
 
+    if (tracker->uses_enum) {
+        fputs(
+            "static void cfg_fail_enum(cfg_common_context_t *ctx, const char *field, const char *val, const char *allowed, const char *origin) {\n"
+            "    char msg[512];\n"
+            "    if (origin) snprintf(msg, sizeof(msg), \"invalid value '%.100s' (from %s), expected one of: %.300s\", val, origin, allowed);\n"
+            "    else snprintf(msg, sizeof(msg), \"invalid value '%.100s', expected one of: %.300s\", val, allowed);\n"
+            "    cfg_fail(ctx, CFG_ERR_VALIDATION, msg, field);\n"
+            "}\n\n", f);
+    }
     if (tracker->uses_int) {
         fputs(
             "static bool cfg_parse_int(const char *s, int64_t *out) {\n"

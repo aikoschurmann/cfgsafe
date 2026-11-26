@@ -446,6 +446,18 @@ int main(int argc, char **argv) {
         printf("FAILED: Expected invalid integer error. Got field '%s', message '%s'\n", err.field, err.message);
     }
 
+    // Test 31: Value that is not a member of the enum
+    total_tests++;
+    printf("\nTest %d: Invalid Enum Value (INI)...\n", total_tests);
+    tests_passed += expect_load_error("integration_bad_enum.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "global_level",
+                                      "invalid value 'VERBOSE', expected one of: DEBUG, INFO, WARN, ERROR", 3);
+
+    total_tests++;
+    printf("\nTest %d: Invalid Enum Value (CLI)...\n", total_tests);
+    const char *bad_enum_cli[] = { "program", "--TestSuite.global_level", "warn" };
+    tests_passed += expect_load_error("integration_perfect.ini", 3, bad_enum_cli, CFG_ERR_VALIDATION, "global_level",
+                                      "invalid value 'warn' (from command line)", 0);
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 
