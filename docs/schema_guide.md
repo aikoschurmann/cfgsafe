@@ -611,7 +611,7 @@ bool validate_port_range_no_conflicts(const void *val, cfg_error_t *err) {
 
 ### Conditional Requirements
 
-The `required_if` property makes a field required only when a condition is met:
+The `required_if` property makes a field required only when a condition is met. The condition compares another field **in the same schema or section** with a literal of that field's type (`int`, `float`, `bool`, `string`/`path`, `ipv4` or an enum member):
 
 ```scala
 schema Conditional {

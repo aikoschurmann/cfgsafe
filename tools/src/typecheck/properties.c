@@ -330,8 +330,14 @@ static bool check_value_matches(Arena *arena, DynArray *errors, const char *file
                 return false;
             }
             AstCondition *cond = &value_node->data.condition;
-            Symbol *sym = symbol_table_lookup(symbols, cond->left);
+            /* The generated check reads the field from the same struct, so it
+             * must be a sibling field, not one from an enclosing scope. */
+            Symbol *sym = symbol_table_lookup_local(symbols, cond->left);
             if (!sym) {
+                if (symbol_table_lookup(symbols, cond->left)) {
+                    *out_err = "condition must refer to a field in the same schema or section";
+                    return false;
+                }
                 report_type_error(arena, errors, TE_UNDECLARED, value_node->span, filename, cond->left);
                 return true; 
             }
@@ -358,6 +364,13 @@ static bool check_value_matches(Arena *arena, DynArray *errors, const char *file
             if (!match) {
                 *out_err = "condition identifier type mismatch with literal";
                 return false;
+            }
+            if (sym->type->kind == TYPE_PRIMITIVE && sym->type->data.primitive == PRIM_IPV4) {
+                InternResult *res = cond->right->data.literal.value.string_val;
+                if (!is_valid_ipv4((res && res->key) ? ((Slice*)res->key)->ptr : "")) {
+                    *out_err = "invalid IPv4 address format";
+                    return false;
+                }
             }
             return true;
         }

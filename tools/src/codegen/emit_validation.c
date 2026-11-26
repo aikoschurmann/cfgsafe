@@ -1,19 +1,46 @@
 #include <string.h>
 #include "codegen/codegen_common.h"
 
-static void emit_condition_expression(FILE *f, AstNode *cond_node, const char *prefix) {
+static AstNode *find_sibling_field(DynArray *items, InternResult *name) {
+    for (size_t i = 0; i < items->count; i++) {
+        AstNode *item = *(AstNode**)dynarray_get(items, i);
+        if (item->node_type == AST_FIELD_DECL && item->data.field_decl.name == name) return item;
+    }
+    return NULL;
+}
+
+/* Emits a C expression for `field == literal`. The typechecker guarantees the
+ * field is a sibling in `items` and the literal matches its type. */
+static void emit_condition_expression(FILE *f, AstNode *cond_node, const char *prefix,
+                                      const char *parent_name, DynArray *items) {
     AstCondition *cond = &cond_node->data.condition;
-    fprintf(f, "%s%s == ", prefix, get_str(cond->left));
+    const char *lhs = get_str(cond->left);
     AstNode *rhs = cond->right;
+    AstNode *field = find_sibling_field(items, cond->left);
+    const char *tname = (field && field->data.field_decl.type->data.ast_type.kind == AST_TYPE_PRIMITIVE)
+        ? get_str(field->data.field_decl.type->data.ast_type.u.primitive.name) : "";
+
     switch (rhs->data.literal.type) {
-        case INT_LITERAL: fprintf(f, "%lld", rhs->data.literal.value.int_val); break;
-        case FLOAT_LITERAL: fprintf(f, "%f", rhs->data.literal.value.float_val); break;
-        case BOOL_LITERAL: fprintf(f, "%s", rhs->data.literal.value.bool_val ? "true" : "false"); break;
-        case STRING_LITERAL: emit_c_string(f, rhs->data.literal.value.string_val); break;
-        case IDENTIFIER_LITERAL: {
-            fprintf(f, "%s", get_str(rhs->data.literal.value.string_val));
+        case INT_LITERAL: fprintf(f, "%s%s == %lld", prefix, lhs, rhs->data.literal.value.int_val); break;
+        case FLOAT_LITERAL: fprintf(f, "%s%s == %.17g", prefix, lhs, rhs->data.literal.value.float_val); break;
+        case BOOL_LITERAL: fprintf(f, "%s%s == %s", prefix, lhs, rhs->data.literal.value.bool_val ? "true" : "false"); break;
+        case STRING_LITERAL:
+            if (strcmp(tname, "ipv4") == 0) {
+                /* Typechecked as a valid dotted quad. */
+                unsigned o[4] = {0, 0, 0, 0};
+                sscanf(get_str(rhs->data.literal.value.string_val), "%u.%u.%u.%u", &o[0], &o[1], &o[2], &o[3]);
+                fprintf(f, "(%s%s.octets[0] == %u && %s%s.octets[1] == %u && %s%s.octets[2] == %u && %s%s.octets[3] == %u)",
+                        prefix, lhs, o[0], prefix, lhs, o[1], prefix, lhs, o[2], prefix, lhs, o[3]);
+            } else {
+                fprintf(f, "(%s%s != NULL && strcmp(%s%s, ", prefix, lhs, prefix, lhs);
+                emit_c_string(f, rhs->data.literal.value.string_val);
+                fprintf(f, ") == 0)");
+            }
             break;
-        }
+        case IDENTIFIER_LITERAL:
+            /* Enum constants are named <Parent>_<field>_<MEMBER>. */
+            fprintf(f, "%s%s == %s_%s_%s", prefix, lhs, parent_name, lhs, get_str(rhs->data.literal.value.string_val));
+            break;
         default: break;
     }
 }
@@ -41,7 +68,7 @@ static void emit_field_empty_check(FILE *f, AstNode *field, const char *prefix) 
     }
 }
 
-static void emit_validation_logic(FILE *f, AstNode *field, const char *prefix) {
+static void emit_validation_logic(FILE *f, AstNode *field, const char *prefix, const char *parent_name, DynArray *items) {
     InternResult *name = field->data.field_decl.name;
     DynArray *props = field->data.field_decl.properties;
     const char *fname = get_str(name);
@@ -111,7 +138,7 @@ static void emit_validation_logic(FILE *f, AstNode *field, const char *prefix) {
         } else if (strcmp(pname, "required_if") == 0) {
             if (can_be_empty(field) || field_needs_presence(field)) {
                 fprintf(f, "    if (");
-                emit_condition_expression(f, prop->value, prefix);
+                emit_condition_expression(f, prop->value, prefix, parent_name, items);
                 fprintf(f, ") {\n        if (");
                 emit_field_empty_check(f, field, prefix);
                 fprintf(f, ") { cfg_set_error(err, \"field required by condition missing\", \"%s\", 0); return false; }\n    }\n", fname);
@@ -144,7 +171,7 @@ void emit_validation_function(UsageTracker *tracker, CodegenContext *ctx, FILE *
     for (size_t i = 0; i < items->count; i++) {
         AstNode *item = *(AstNode**)dynarray_get(items, i);
         if (item->node_type == AST_FIELD_DECL) {
-            emit_validation_logic(f, item, "cfg->");
+            emit_validation_logic(f, item, "cfg->", name, items);
             AstNode *type_node = item->data.field_decl.type;
             if (type_node->node_type == AST_TYPE && type_node->data.ast_type.kind == AST_TYPE_PRIMITIVE) {
                 const char *tname = get_str(type_node->data.ast_type.u.primitive.name);
