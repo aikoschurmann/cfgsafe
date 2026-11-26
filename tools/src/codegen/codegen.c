@@ -412,7 +412,14 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "    for (int i = 0; i < num_parts - 1; i++) parts[i] = parts[i+1];\n");
         fprintf(f, "    num_parts--;\n\n");
 
-        fprintf(f, "    %s_ini_handler_recursive(ctx, key, val, parts, num_parts, 0);\n", schema_name);
+        fprintf(f, "    if (!%s_ini_handler_recursive(ctx, key, val, parts, num_parts, 0)) {\n", schema_name);
+        fprintf(f, "#ifndef CFG_ALLOW_UNKNOWN_KEYS\n");
+        fprintf(f, "        char msg[512];\n");
+        fprintf(f, "        if (key) snprintf(msg, sizeof(msg), \"unknown key '%%.100s' in section [%%.300s]\", key, sec);\n");
+        fprintf(f, "        else snprintf(msg, sizeof(msg), \"unknown array section [[%%.300s]]\", sec);\n");
+        fprintf(f, "        cfg_fail(ctx, CFG_ERR_VALIDATION, msg, key ? key : sec);\n");
+        fprintf(f, "#endif\n");
+        fprintf(f, "    }\n");
         fprintf(f, "}\n\n");
 
         fprintf(f, "cfg_status_t %s_load(%s_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err) {\n", schema_name, schema_name);

@@ -458,6 +458,24 @@ int main(int argc, char **argv) {
     tests_passed += expect_load_error("integration_perfect.ini", 3, bad_enum_cli, CFG_ERR_VALIDATION, "global_level",
                                       "invalid value 'warn' (from command line)", 0);
 
+    // Test 33: Misspelled key
+    total_tests++;
+    printf("\nTest %d: Unknown Key...\n", total_tests);
+    tests_passed += expect_load_error("integration_unknown_key.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "verison",
+                                      "unknown key 'verison' in section [TestSuite]", 3);
+
+    // Test 34: Key inside a misspelled section
+    total_tests++;
+    printf("\nTest %d: Unknown Section...\n", total_tests);
+    tests_passed += expect_load_error("integration_unknown_section.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "bind_addr",
+                                      "unknown key 'bind_addr' in section [TestSuite.level1.levl2]", 5);
+
+    // Test 35: [[...]] header that is not an array of structs (used to dereference a NULL key)
+    total_tests++;
+    printf("\nTest %d: Unknown Array Section...\n", total_tests);
+    tests_passed += expect_load_error("integration_unknown_array_section.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "TestSuite",
+                                      "unknown array section [[TestSuite]]", 4);
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 
