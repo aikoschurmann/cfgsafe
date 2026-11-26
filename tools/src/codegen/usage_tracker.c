@@ -30,6 +30,33 @@ AstNode* get_schema_by_name(CodegenContext *ctx, const char *name) {
     return NULL;
 }
 
+bool field_needs_presence(AstNode *field) {
+    AstType *type = &field->data.field_decl.type->data.ast_type;
+    bool scalar = false;
+    if (type->kind == AST_TYPE_ENUM) {
+        scalar = true;
+    } else if (type->kind == AST_TYPE_PRIMITIVE) {
+        const char *t = get_str(type->u.primitive.name);
+        scalar = strcmp(t, "int") == 0 || strcmp(t, "float") == 0 || strcmp(t, "bool") == 0 || strcmp(t, "ipv4") == 0;
+    }
+    if (!scalar) return false;
+
+    DynArray *props = field->data.field_decl.properties;
+    for (size_t i = 0; props && i < props->count; i++) {
+        AstPropertyDecl *prop = &(*(AstNode**)dynarray_get(props, i))->data.property_decl;
+        const char *pname = get_str(prop->name);
+        if (strcmp(pname, "required_if") == 0) return true;
+        if (strcmp(pname, "required") == 0 && prop->value->data.literal.value.bool_val) return true;
+    }
+    return false;
+}
+
+void emit_mark_present(FILE *f, const char *indent, AstNode *field, const char *prefix) {
+    if (field_needs_presence(field)) {
+        fprintf(f, "%s%s_present.%s = true;\n", indent, prefix, get_str(field->data.field_decl.name));
+    }
+}
+
 void track_usage(AstNode *node, UsageTracker *tracker) {
     if (!node) return;
 

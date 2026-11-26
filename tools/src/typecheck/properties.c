@@ -225,7 +225,8 @@ static bool check_value_matches(Arena *arena, DynArray *errors, const char *file
                 return false;
             }
             LiteralType expected_lit = def.literal_type;
-            if (expected_lit == (LiteralType)-1) { 
+            bool typed_by_field = (expected_lit == (LiteralType)-1);
+            if (typed_by_field) { 
                 if (field_type->kind == TYPE_PRIMITIVE) {
                     switch (field_type->data.primitive) {
                         case PRIM_INT:    expected_lit = INT_LITERAL;    break;
@@ -248,7 +249,7 @@ static bool check_value_matches(Arena *arena, DynArray *errors, const char *file
                 return false;
             }
 
-            if (field_type->kind == TYPE_ENUM) {
+            if (typed_by_field && field_type->kind == TYPE_ENUM) {
                 return check_enum_member(arena, field_type, value_node, out_err);
             }
 

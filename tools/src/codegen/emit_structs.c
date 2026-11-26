@@ -90,13 +90,26 @@ void emit_section_or_schema(CodegenContext *ctx, FILE *f, AstNode *node, const c
         fprintf(f, "typedef struct %s_t {\n", name);
     }
     
+    bool has_presence = false;
     for (size_t i = 0; i < items->count; i++) {
         AstNode *item = *(AstNode**)dynarray_get(items, i);
         if (item->node_type == AST_FIELD_DECL) {
             emit_struct_field(ctx, f, item, name);
+            if (field_needs_presence(item)) has_presence = true;
         } else if (item->node_type == AST_SECTION_DECL) {
             fprintf(f, "    %s_t %s;\n", get_str(item->data.section_decl.name), get_str(item->data.section_decl.name));
         }
+    }
+    if (has_presence) {
+        /* Which required scalar fields were given a value (by default, INI, env or CLI). */
+        fprintf(f, "    struct {");
+        for (size_t i = 0; i < items->count; i++) {
+            AstNode *item = *(AstNode**)dynarray_get(items, i);
+            if (item->node_type == AST_FIELD_DECL && field_needs_presence(item)) {
+                fprintf(f, " bool %s;", get_str(item->data.field_decl.name));
+            }
+        }
+        fprintf(f, " } _present;\n");
     }
     if (node->node_type == AST_SCHEMA_DECL) {
         fprintf(f, "    void* internal_pool;\n");

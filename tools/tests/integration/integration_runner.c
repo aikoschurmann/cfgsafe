@@ -541,6 +541,52 @@ int main(int argc, char **argv) {
         printf("FAILED: Load failed. Error: %s, Field: %s\n", err.message, err.field);
     }
 
+    // Test 39-42: `required` on scalar fields (int, float, bool, enum, ipv4)
+    {
+        RequiredScalars_t rs;
+
+        total_tests++;
+        printf("\nTest %d: Required Scalars Given Zero Values...\n", total_tests);
+        if (RequiredScalars_load(&rs, "integration_required_ok.ini", 1, (const char**)argv, &err) == CFG_SUCCESS) {
+            printf("PASSED: Explicit zero/false values satisfy required.\n");
+            tests_passed++;
+            RequiredScalars_free(&rs);
+        } else {
+            printf("FAILED: Error: %s, Field: %s\n", err.message, err.field);
+        }
+
+        total_tests++;
+        printf("\nTest %d: Missing Required Int...\n", total_tests);
+        if (RequiredScalars_load(&rs, "integration_required_missing.ini", 1, (const char**)argv, &err) == CFG_ERR_VALIDATION &&
+            strcmp(err.field, "port") == 0 && strcmp(err.message, "required field missing") == 0) {
+            printf("PASSED: %s (field: %s)\n", err.message, err.field);
+            tests_passed++;
+        } else {
+            printf("FAILED: Expected missing 'port'. Got field '%s', message '%s'\n", err.field, err.message);
+        }
+
+        total_tests++;
+        printf("\nTest %d: Required Int Supplied on the Command Line...\n", total_tests);
+        const char *req_cli[] = { "program", "--RequiredScalars.port=8443" };
+        if (RequiredScalars_load(&rs, "integration_required_missing.ini", 2, req_cli, &err) == CFG_SUCCESS && rs.port == 8443) {
+            printf("PASSED: CLI value satisfies required.\n");
+            tests_passed++;
+            RequiredScalars_free(&rs);
+        } else {
+            printf("FAILED: Error: %s, Field: %s\n", err.message, err.field);
+        }
+
+        total_tests++;
+        printf("\nTest %d: required_if on an Int...\n", total_tests);
+        if (RequiredScalars_load(&rs, "integration_required_if_missing.ini", 1, (const char**)argv, &err) == CFG_ERR_VALIDATION &&
+            strcmp(err.field, "tls_port") == 0) {
+            printf("PASSED: %s (field: %s)\n", err.message, err.field);
+            tests_passed++;
+        } else {
+            printf("FAILED: Expected missing 'tls_port'. Got field '%s', message '%s'\n", err.field, err.message);
+        }
+    }
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 

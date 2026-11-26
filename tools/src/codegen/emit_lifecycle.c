@@ -62,6 +62,7 @@ static void emit_default_initialization(FILE *f, AstNode *field, const char *pre
     if (default_node) {
         AstType *type = &field->data.field_decl.type->data.ast_type;
         const char *fname = get_str(name);
+        emit_mark_present(f, "    ", field, prefix);
         
         if (type->kind == AST_TYPE_PRIMITIVE && strcmp(get_str(type->u.primitive.name), "ipv4") == 0) {
             fprintf(f, "    cfg_parse_ipv4(\"%s\", &%s%s);\n", get_str(default_node->data.literal.value.string_val), prefix, fname);
@@ -117,6 +118,7 @@ static void emit_env_overrides(UsageTracker *tracker, FILE *f, AstNode *field, c
             snprintf(origin, sizeof(origin), "\"env %s\"", env_var);
             fprintf(f, "    { const char *e = getenv(\"%s\"); if (e) {\n", env_var);
             emit_scalar_parse(f, "        ", get_str(type->u.primitive.name), lhs, "e", get_str(name), ctx_name, origin);
+            emit_mark_present(f, "        ", field, prefix);
             fprintf(f, "    } }\n");
         }
     }
@@ -220,6 +222,9 @@ static void emit_ini_handler_body(CodegenContext *ctx, FILE *f, AstNode *node, c
                     emit_array_parse(f, "", elem, lhs, "val", fname, "ctx", "NULL");
                 }
             }
+            char indent[64];
+            snprintf(indent, sizeof(indent), "%*s", (target_depth + 3) * 4, "");
+            emit_mark_present(f, indent, item, prefix);
             emit_indent(f, target_depth + 3); fprintf(f, "return true;\n");
             emit_indent(f, target_depth + 2); fprintf(f, "}\n");
         }
