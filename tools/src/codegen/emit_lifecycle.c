@@ -116,8 +116,10 @@ static void emit_env_overrides(UsageTracker *tracker, FILE *f, AstNode *field, c
             char lhs[512], origin[300];
             snprintf(lhs, sizeof(lhs), "%s%s", prefix, get_str(name));
             snprintf(origin, sizeof(origin), "\"env %s\"", env_var);
+            char path[512];
+            snprintf(path, sizeof(path), "%s%s", strncmp(prefix, "cfg->", 5) == 0 ? prefix + 5 : prefix, get_str(name));
             fprintf(f, "    { const char *e = getenv(\"%s\"); if (e) {\n", env_var);
-            emit_scalar_parse(f, "        ", get_str(type->u.primitive.name), lhs, "e", get_str(name), ctx_name, origin, field_is_secret(field));
+            emit_scalar_parse(f, "        ", get_str(type->u.primitive.name), lhs, "e", path, ctx_name, origin, field_is_secret(field));
             emit_mark_present(f, "        ", field, prefix);
             fprintf(f, "    } }\n");
         }
@@ -320,7 +322,7 @@ static void emit_cli_parser(CodegenContext *ctx, FILE *f, AstNode *schema, const
 
     fprintf(f, "void %s_parse_cli(%s_t *cfg, int argc, const char **argv) {\n", schema_name, schema_name);
     fprintf(f, "    if (!cfg) return;\n");
-    fprintf(f, "    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool, NULL, 0, CFG_SUCCESS };\n");
+    fprintf(f, "    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool, NULL, 0, CFG_SUCCESS, NULL };\n");
     fprintf(f, "    %s_parse_cli_ctx(&ctx, argc, argv);\n", schema_name);
     fprintf(f, "    cfg->internal_pool = ctx.pool;\n");
     fprintf(f, "}\n\n");

@@ -3,7 +3,7 @@ import "integration_hooks.h"
 schema GithubSource {
     url: string
     tag: string
-    target: string
+    target: string { pattern: "^[a-z_]+$" }
     options: string[]
 }
 

@@ -13,18 +13,19 @@ static const char* get_short_flag(AstNode *field) {
 }
 
 /* Emits the statements that store the C string `val` into the field. */
-static void emit_cli_value_body(FILE *f, AstNode *field, AstType *type, const char *prefix, const char *parent_name) {
+static void emit_cli_value_body(FILE *f, AstNode *field, AstType *type, const char *prefix, const char *parent_name,
+                                const char *field_path) {
     const char *fname = get_str(field->data.field_decl.name);
     char lhs[600];
     snprintf(lhs, sizeof(lhs), "%s%s", prefix, fname);
     if (type->kind == AST_TYPE_PRIMITIVE) {
-        emit_scalar_parse(f, "        ", get_str(type->u.primitive.name), lhs, "val", fname, "ctx", "\"command line\"", field_is_secret(field));
+        emit_scalar_parse(f, "        ", get_str(type->u.primitive.name), lhs, "val", field_path, "ctx", "\"command line\"", field_is_secret(field));
     } else if (type->kind == AST_TYPE_ENUM) {
         char enum_prefix[512];
         snprintf(enum_prefix, sizeof(enum_prefix), "%s_%s", parent_name, fname);
-        emit_enum_parse(f, "        ", type, lhs, enum_prefix, "val", fname, "ctx", "\"command line\"", field_is_secret(field));
+        emit_enum_parse(f, "        ", type, lhs, enum_prefix, "val", field_path, "ctx", "\"command line\"", field_is_secret(field));
     } else {
-        emit_array_parse(f, "        ", type->u.array.elem, lhs, "val", fname, "ctx", "\"command line\"", field_is_secret(field));
+        emit_array_parse(f, "        ", type->u.array.elem, lhs, "val", field_path, "ctx", "\"command line\"", field_is_secret(field));
     }
     emit_mark_present(f, "        ", field, prefix);
 }
@@ -35,6 +36,7 @@ static void emit_cli_option(FILE *f, AstNode *field, AstType *type, const char *
                             const char *full_path, const char *short_flag, const char *parent_name) {
     const char *fname = get_str(field->data.field_decl.name);
     bool is_bool = type->kind == AST_TYPE_PRIMITIVE && strcmp(get_str(type->u.primitive.name), "bool") == 0;
+    const char *field_path = strchr(full_path, '.') ? strchr(full_path, '.') + 1 : full_path;
 
     fprintf(f, "    if (strcmp(arg, \"--%s\") == 0", full_path);
     if (short_flag) fprintf(f, " || (arg[0] == '-' && arg[1] == '%c' && arg[2] == '\\0')", short_flag[0]);
@@ -43,17 +45,17 @@ static void emit_cli_option(FILE *f, AstNode *field, AstType *type, const char *
         fprintf(f, "        %s%s = true;\n", prefix, fname);
         emit_mark_present(f, "        ", field, prefix);
     } else {
-        fprintf(f, "        if (i + 1 >= argc) { cfg_fail_arg(ctx, \"missing value for option\", arg, \"%s\"); return true; }\n", fname);
+        fprintf(f, "        if (i + 1 >= argc) { cfg_fail_arg(ctx, \"missing value for option\", arg, \"%s\"); return true; }\n", field_path);
         fprintf(f, "        const char *val = argv[++i];\n");
         fprintf(f, "        *index = i;\n");
-        emit_cli_value_body(f, field, type, prefix, parent_name);
+        emit_cli_value_body(f, field, type, prefix, parent_name, field_path);
     }
     fprintf(f, "        return true;\n");
     fprintf(f, "    }\n");
 
     fprintf(f, "    if (strncmp(arg, \"--%s=\", %zu) == 0) {\n", full_path, strlen(full_path) + 3);
     fprintf(f, "        const char *val = arg + %zu;\n", strlen(full_path) + 3);
-    emit_cli_value_body(f, field, type, prefix, parent_name);
+    emit_cli_value_body(f, field, type, prefix, parent_name, field_path);
     fprintf(f, "        return true;\n");
     fprintf(f, "    }\n");
 }

@@ -58,6 +58,7 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
         "    cfg_error_t *err;\n"
         "    size_t line;\n"
         "    cfg_status_t status;\n"
+        "    const char *path; /* dotted section path of the INI key being parsed, or NULL */\n"
         "} cfg_common_context_t;\n\n"
         "/* Records the first error only; later errors are usually consequences of it. */\n"
         "static void cfg_fail(cfg_common_context_t *ctx, cfg_status_t status, const char *msg, const char *field) {\n"
@@ -65,14 +66,30 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
         "    ctx->status = status;\n"
         "    cfg_set_error(ctx->err, msg, field, ctx->line);\n"
         "}\n\n"
+        "/* Qualifies an INI field name with the current section path, e.g. \"db.port\". */\n"
+        "static const char *cfg_field_path(const cfg_common_context_t *ctx, const char *field, char *buf, size_t n) {\n"
+        "    if (!ctx->path || !ctx->path[0] || !field) return field;\n"
+        "    snprintf(buf, n, \"%.120s.%.120s\", ctx->path, field);\n"
+        "    return buf;\n"
+        "}\n\n"
+        "/* Adds an enclosing field (and array index, if >= 0) to err->field while a\n"
+        " * nested validation failure unwinds: \"port\" becomes \"db.port\". */\n"
+        "static inline void cfg_prefix_field(cfg_error_t *err, const char *name, long index) {\n"
+        "    char buf[sizeof(err->field)];\n"
+        "    if (!err) return;\n"
+        "    if (index >= 0) snprintf(buf, sizeof(buf), err->field[0] ? \"%s[%ld].%s\" : \"%s[%ld]\", name, index, err->field);\n"
+        "    else snprintf(buf, sizeof(buf), err->field[0] ? \"%s.%s\" : \"%s\", name, err->field);\n"
+        "    memcpy(err->field, buf, sizeof(buf));\n"
+        "}\n\n"
         "/* `val` is NULL for secret fields, whose values must not appear in messages. */\n"
         "static void cfg_fail_value(cfg_common_context_t *ctx, const char *kind, const char *field, const char *val, const char *origin) {\n"
         "    char msg[512], shown[220];\n"
         "    if (val) snprintf(shown, sizeof(shown), \"'%.200s'\", val);\n"
         "    else snprintf(shown, sizeof(shown), \"(redacted)\");\n"
+        "    char path[256];\n"
         "    if (origin) snprintf(msg, sizeof(msg), \"invalid %s value %s (from %s)\", kind, shown, origin);\n"
         "    else snprintf(msg, sizeof(msg), \"invalid %s value %s\", kind, shown);\n"
-        "    cfg_fail(ctx, CFG_ERR_VALIDATION, msg, field);\n"
+        "    cfg_fail(ctx, CFG_ERR_VALIDATION, msg, cfg_field_path(ctx, field, path, sizeof(path)));\n"
         "}\n\n"
         "/* Reports a command-line option by name only: anything after '=' may be a secret. */\n"
         "static void cfg_fail_arg(cfg_common_context_t *ctx, const char *what, const char *arg, const char *field) {\n"
@@ -90,7 +107,8 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
             "    else snprintf(shown, sizeof(shown), \"(redacted)\");\n"
             "    if (origin) snprintf(msg, sizeof(msg), \"invalid value %s (from %s), expected one of: %.300s\", shown, origin, allowed);\n"
             "    else snprintf(msg, sizeof(msg), \"invalid value %s, expected one of: %.300s\", shown, allowed);\n"
-            "    cfg_fail(ctx, CFG_ERR_VALIDATION, msg, field);\n"
+            "    char path[256];\n"
+            "    cfg_fail(ctx, CFG_ERR_VALIDATION, msg, cfg_field_path(ctx, field, path, sizeof(path)));\n"
             "}\n\n", f);
     }
     if (tracker->uses_int) {
@@ -522,14 +540,16 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
 
         fprintf(f, "    if (num_parts == 0 || strcmp(parts[0], \"%s\") != 0) return;\n", schema_name);
         fprintf(f, "    for (int i = 0; i < num_parts - 1; i++) parts[i] = parts[i+1];\n");
-        fprintf(f, "    num_parts--;\n\n");
+        fprintf(f, "    num_parts--;\n");
+        fprintf(f, "    ctx->path = strchr(sec, '.') ? strchr(sec, '.') + 1 : \"\";\n\n");
 
         fprintf(f, "    if (!%s_ini_handler_recursive(ctx, key, val, parts, num_parts, 0)) {\n", schema_name);
         fprintf(f, "#ifndef CFG_ALLOW_UNKNOWN_KEYS\n");
         fprintf(f, "        char msg[512];\n");
         fprintf(f, "        if (key) snprintf(msg, sizeof(msg), \"unknown key '%%.100s' in section [%%.300s]\", key, sec);\n");
         fprintf(f, "        else snprintf(msg, sizeof(msg), \"unknown array section [[%%.300s]]\", sec);\n");
-        fprintf(f, "        cfg_fail(ctx, CFG_ERR_VALIDATION, msg, key ? key : sec);\n");
+        fprintf(f, "        char path[256];\n");
+        fprintf(f, "        cfg_fail(ctx, CFG_ERR_VALIDATION, msg, key ? cfg_field_path(ctx, key, path, sizeof(path)) : (ctx->path[0] ? ctx->path : sec));\n");
         fprintf(f, "#endif\n");
         fprintf(f, "    }\n");
         fprintf(f, "}\n\n");
@@ -537,7 +557,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "cfg_status_t %s_load(%s_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err) {\n", schema_name, schema_name);
         fprintf(f, "    if (!cfg) return CFG_ERR_VALIDATION;\n");
         fprintf(f, "    memset(cfg, 0, sizeof(%s_t));\n", schema_name);
-        fprintf(f, "    cfg_common_context_t ctx = { cfg, NULL, err, 0, CFG_SUCCESS };\n");
+        fprintf(f, "    cfg_common_context_t ctx = { cfg, NULL, err, 0, CFG_SUCCESS, NULL };\n");
         fprintf(f, "    if (err) memset(err, 0, sizeof(cfg_error_t));\n");
         
         emit_default_initialization_recursive(ctx, f, schema, "cfg->", "&ctx");
@@ -548,6 +568,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "        return ctx.status;\n");
         fprintf(f, "    }\n");
         fprintf(f, "    ctx.line = 0;\n");
+        fprintf(f, "    ctx.path = NULL;\n");
 
         emit_env_overrides_recursive(ctx, &tracker, f, schema, "cfg->", "&ctx");
 

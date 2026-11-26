@@ -150,11 +150,11 @@ static void emit_validation_logic(FILE *f, AstNode *field, const char *prefix, c
                           (strcmp(get_str(type->u.primitive.name), "string") == 0 || 
                            strcmp(get_str(type->u.primitive.name), "path") == 0));
             
-            if (is_str) {
-                fprintf(f, "    if (!%s(%s%s, err)) return false;\n", hook_name, prefix, fname);
-            } else {
-                fprintf(f, "    if (!%s(&%s%s, err)) return false;\n", hook_name, prefix, fname);
-            }
+            /* A hook may set its own message; fill in whatever it left empty. */
+            fprintf(f, "    if (!%s(%s%s%s, err)) {\n", hook_name, is_str ? "" : "&", prefix, fname);
+            fprintf(f, "        if (err && !err->field[0]) cfg_set_error(err, err->message[0] ? NULL : \"rejected by hook '%s'\", \"%s\", 0);\n", hook_name, fname);
+            fprintf(f, "        return false;\n");
+            fprintf(f, "    }\n");
         }
     }
 }
@@ -176,7 +176,8 @@ void emit_validation_function(UsageTracker *tracker, CodegenContext *ctx, FILE *
             if (type_node->node_type == AST_TYPE && type_node->data.ast_type.kind == AST_TYPE_PRIMITIVE) {
                 const char *tname = get_str(type_node->data.ast_type.u.primitive.name);
                 if (is_schema_name(ctx, tname)) {
-                    fprintf(f, "    if (!%s_validate(&cfg->%s, err)) return false;\n", tname, get_str(item->data.field_decl.name));
+                    fprintf(f, "    if (!%s_validate(&cfg->%s, err)) { cfg_prefix_field(err, \"%s\", -1); return false; }\n",
+                            tname, get_str(item->data.field_decl.name), get_str(item->data.field_decl.name));
                 }
             } else if (type_node->node_type == AST_TYPE && type_node->data.ast_type.kind == AST_TYPE_ARRAY) {
                 AstNode *elem = type_node->data.ast_type.u.array.elem;
@@ -184,13 +185,15 @@ void emit_validation_function(UsageTracker *tracker, CodegenContext *ctx, FILE *
                     const char *elem_tname = get_str(elem->data.ast_type.u.primitive.name);
                     if (is_schema_name(ctx, elem_tname)) {
                         fprintf(f, "    for (size_t i = 0; i < cfg->%s.count; i++) {\n", get_str(item->data.field_decl.name));
-                        fprintf(f, "        if (!%s_validate(&cfg->%s.data[i], err)) return false;\n", elem_tname, get_str(item->data.field_decl.name));
+                        fprintf(f, "        if (!%s_validate(&cfg->%s.data[i], err)) { cfg_prefix_field(err, \"%s\", (long)i); return false; }\n",
+                                elem_tname, get_str(item->data.field_decl.name), get_str(item->data.field_decl.name));
                         fprintf(f, "    }\n");
                     }
                 }
             }
         } else if (item->node_type == AST_SECTION_DECL) {
-            fprintf(f, "    if (!%s_validate(&cfg->%s, err)) return false;\n", get_str(item->data.section_decl.name), get_str(item->data.section_decl.name));
+            fprintf(f, "    if (!%s_validate(&cfg->%s, err)) { cfg_prefix_field(err, \"%s\", -1); return false; }\n",
+                    get_str(item->data.section_decl.name), get_str(item->data.section_decl.name), get_str(item->data.section_decl.name));
         }
     }
     fprintf(f, "    return true;\n}\n\n");

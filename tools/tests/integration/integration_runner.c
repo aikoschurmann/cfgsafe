@@ -394,22 +394,22 @@ int main(int argc, char **argv) {
     // Test 24: Unrecognised boolean literal
     total_tests++;
     printf("\nTest %d: Strict Boolean Parsing...\n", total_tests);
-    tests_passed += expect_load_error("integration_bad_bool.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "debug_mode", "invalid boolean value 'yes'", 5);
+    tests_passed += expect_load_error("integration_bad_bool.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "level1.level2.level3.debug_mode", "invalid boolean value 'yes'", 5);
 
     // Test 25: Malformed float and IPv4 values
     total_tests++;
     printf("\nTest %d: Strict Float Parsing...\n", total_tests);
-    tests_passed += expect_load_error("integration_bad_float.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "factor", "invalid float value '0.5x'", 5);
+    tests_passed += expect_load_error("integration_bad_float.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "level1.factor", "invalid float value '0.5x'", 5);
 
     total_tests++;
     printf("\nTest %d: Strict IPv4 Parsing...\n", total_tests);
-    tests_passed += expect_load_error("integration_bad_ipv4.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "bind_addr", "invalid IPv4 value '10.0.0.1.5'", 5);
+    tests_passed += expect_load_error("integration_bad_ipv4.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "level1.level2.bind_addr", "invalid IPv4 value '10.0.0.1.5'", 5);
 
     // Test 27: Malformed value from the environment
     total_tests++;
     printf("\nTest %d: Strict Parsing of Environment Values...\n", total_tests);
     setenv("BIND_ADDR", "300.1.1.1", 1);
-    tests_passed += expect_load_error("integration_perfect.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "bind_addr", "(from env BIND_ADDR)", 0);
+    tests_passed += expect_load_error("integration_perfect.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "level1.level2.bind_addr", "(from env BIND_ADDR)", 0);
     unsetenv("BIND_ADDR");
 
     // Test 28: Malformed value from the command line
@@ -467,7 +467,7 @@ int main(int argc, char **argv) {
     // Test 34: Key inside a misspelled section
     total_tests++;
     printf("\nTest %d: Unknown Section...\n", total_tests);
-    tests_passed += expect_load_error("integration_unknown_section.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "bind_addr",
+    tests_passed += expect_load_error("integration_unknown_section.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "level1.levl2.bind_addr",
                                       "unknown key 'bind_addr' in section [TestSuite.level1.levl2]", 5);
 
     // Test 35: [[...]] header that is not an array of structs (used to dereference a NULL key)
@@ -594,7 +594,7 @@ int main(int argc, char **argv) {
             { "enum", "--Conditions.mode", "ADVANCED", "adv_key" },
             { "string", "--Conditions.kind", "special", "kind_val" },
             { "ipv4", "--Conditions.gw", "10.0.0.1", "gw_name" },
-            { "enum in section", "--Conditions.net.proto", "UDP", "udp_buf" },
+            { "enum in section", "--Conditions.net.proto", "UDP", "net.udp_buf" },
         };
         for (size_t i = 0; i < sizeof(cond_cases) / sizeof(cond_cases[0]); i++) {
             Conditions_t cond;
@@ -718,6 +718,33 @@ int main(int argc, char **argv) {
         }
         if (ok == 3) { printf("PASSED: No secret value in any message.\n"); tests_passed++; }
         else printf("FAILED: %d of 3 cases redacted.\n", ok);
+    }
+
+    // Test 54: Validation errors name the full path to the field
+    total_tests++;
+    printf("\nTest %d: Dotted Field Paths in Validation Errors...\n", total_tests);
+    {
+        int ok = 0;
+        // nested schema-typed field + hook without its own message
+        if (EdgeCaseTest_load(&edge, "integration_nested_hook_path.ini", 1, (const char**)argv, &err) == CFG_ERR_VALIDATION &&
+            strcmp(err.field, "sub.nested_id") == 0 && strcmp(err.message, "rejected by hook 'test_nested_hook'") == 0) ok++;
+        else printf("  nested hook: field '%s', message '%s'\n", err.field, err.message);
+        // element of an array of structs
+        if (EdgeCaseTest_load(&edge, "integration_bad_array_struct.ini", 1, (const char**)argv, &err) == CFG_ERR_VALIDATION &&
+            strcmp(err.field, "sources[1].target") == 0) ok++;
+        else printf("  struct array: field '%s', message '%s'\n", err.field, err.message);
+        // array of structs inside a section
+        NestedArrays_t na;
+        if (NestedArrays_load(&na, "integration_bad_nested_array.ini", 1, (const char**)argv, &err) == CFG_ERR_VALIDATION &&
+            strcmp(err.field, "deps.github[0].target") == 0) ok++;
+        else printf("  nested struct array: field '%s', message '%s'\n", err.field, err.message);
+        // section field reached via the command line
+        const char *range_cli[] = { "program", "--TestSuite.level1.factor=2.0" };
+        if (TestSuite_load(&cfg, "integration_perfect.ini", 2, range_cli, &err) == CFG_ERR_VALIDATION &&
+            strcmp(err.field, "level1.factor") == 0) ok++;
+        else printf("  section range: field '%s', message '%s'\n", err.field, err.message);
+        if (ok == 4) { printf("PASSED: All 4 paths correct.\n"); tests_passed++; }
+        else printf("FAILED: %d of 4 paths correct.\n", ok);
     }
 
     printf("\n--- Test Results Summary ---\n");
