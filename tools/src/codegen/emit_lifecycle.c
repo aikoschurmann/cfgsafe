@@ -185,7 +185,7 @@ static void emit_ini_handler_body(CodegenContext *ctx, FILE *f, AstNode *node, c
         ? node->data.schema_decl.items 
         : node->data.section_decl.items;
 
-    emit_indent(f, target_depth + 1); fprintf(f, "if (num_parts == %d) {\n", target_depth);
+    emit_indent(f, target_depth + 1); fprintf(f, "if (key && num_parts == %d) {\n", target_depth);
     for (size_t i = 0; i < items->count; i++) {
         AstNode *item = *(AstNode**)dynarray_get(items, i);
         if (item->node_type == AST_FIELD_DECL) {
@@ -216,7 +216,7 @@ static void emit_ini_handler_body(CodegenContext *ctx, FILE *f, AstNode *node, c
                     emit_array_parse(f, "", elem, lhs, "val", fname, "ctx", "NULL");
                 }
             }
-            emit_indent(f, target_depth + 3); fprintf(f, "return;\n");
+            emit_indent(f, target_depth + 3); fprintf(f, "return true;\n");
             emit_indent(f, target_depth + 2); fprintf(f, "}\n");
         }
     }
@@ -269,7 +269,7 @@ static void emit_ini_handler_body(CodegenContext *ctx, FILE *f, AstNode *node, c
                         AstNode *target_schema = get_schema_by_name(ctx, elem_tname);
                         emit_default_initialization_recursive(ctx, f, target_schema, new_prefix, "ctx");
 
-                        emit_indent(f, target_depth + 3); fprintf(f, "return;\n");
+                        emit_indent(f, target_depth + 3); fprintf(f, "return true;\n");
                         emit_indent(f, target_depth + 2); fprintf(f, "}\n");
                         
                         emit_indent(f, target_depth + 2);
@@ -313,10 +313,12 @@ static void emit_cli_parser(CodegenContext *ctx, FILE *f, AstNode *schema, const
 }
 
 void emit_recursive_ini_handler(CodegenContext *ctx, FILE *f, AstNode *schema, const char *schema_name) {
-    fprintf(f, "static void %s_ini_handler_recursive(cfg_common_context_t *ctx, const char *key, const char *val, char **parts, int num_parts, int depth) {\n", schema_name);
+    fprintf(f, "/* Returns false if no field matches the section path and key. */\n");
+    fprintf(f, "static bool %s_ini_handler_recursive(cfg_common_context_t *ctx, const char *key, const char *val, char **parts, int num_parts, int depth) {\n", schema_name);
     fprintf(f, "    (void)parts; (void)depth;\n");
     char prefix[256]; snprintf(prefix, sizeof(prefix), "((%s_t*)ctx->cfg)->", schema_name);
     emit_ini_handler_body(ctx, f, schema, prefix, schema_name, 0);
+    fprintf(f, "    return false;\n");
     fprintf(f, "}\n\n");
     emit_cli_parser(ctx, f, schema, schema_name);
 }
