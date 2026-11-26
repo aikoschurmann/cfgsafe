@@ -45,7 +45,7 @@ static void emit_cli_option(FILE *f, AstNode *field, AstType *type, const char *
         fprintf(f, "        %s%s = true;\n", prefix, fname);
         emit_mark_present(f, "        ", field, prefix);
     } else {
-        fprintf(f, "        if (i + 1 >= argc) { cfg_fail_arg(ctx, \"missing value for option\", arg, \"%s\"); return true; }\n", field_path);
+        fprintf(f, "        if (i + 1 >= argc) { cfg_fail_arg(ctx, CFG_KIND_MISSING, \"missing value for option\", arg, \"%s\"); return true; }\n", field_path);
         fprintf(f, "        const char *val = argv[++i];\n");
         fprintf(f, "        *index = i;\n");
         emit_cli_value_body(f, field, type, prefix, parent_name, field_path);

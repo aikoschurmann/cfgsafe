@@ -93,10 +93,11 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
         "    }\n"
         "}\n\n"
         "/* Records the first error only; later errors are usually consequences of it. */\n"
-        "static void cfg_fail(cfg_common_context_t *ctx, cfg_status_t status, const char *msg, const char *field) {\n"
+        "static void cfg_fail(cfg_common_context_t *ctx, cfg_status_t status, cfg_error_kind_t kind, const char *msg, const char *field) {\n"
         "    if (ctx->status != CFG_SUCCESS) return;\n"
         "    ctx->status = status;\n"
         "    cfg_set_error(ctx->err, msg, field, ctx->line);\n"
+        "    if (ctx->err) ctx->err->kind = kind;\n"
         "}\n\n"
         , f);
 
@@ -136,14 +137,14 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
         "    char path[256];\n"
         "    if (origin) snprintf(msg, sizeof(msg), \"invalid %s value %s (from %s)\", kind, shown, origin);\n"
         "    else snprintf(msg, sizeof(msg), \"invalid %s value %s\", kind, shown);\n"
-        "    cfg_fail(ctx, CFG_ERR_VALIDATION, msg, cfg_field_path(ctx, field, path, sizeof(path)));\n"
+        "    cfg_fail(ctx, CFG_ERR_VALIDATION, CFG_KIND_INVALID_VALUE, msg, cfg_field_path(ctx, field, path, sizeof(path)));\n"
         "}\n\n"
         "/* Reports a command-line option by name only: anything after '=' may be a secret. */\n"
-        "static void cfg_fail_arg(cfg_common_context_t *ctx, const char *what, const char *arg, const char *field) {\n"
+        "static void cfg_fail_arg(cfg_common_context_t *ctx, cfg_error_kind_t kind, const char *what, const char *arg, const char *field) {\n"
         "    char msg[512], opt[300];\n"
         "    snprintf(opt, sizeof(opt), \"%.*s\", (int)strcspn(arg, \"=\"), arg);\n"
         "    snprintf(msg, sizeof(msg), \"%s '%s' (from command line)\", what, opt);\n"
-        "    cfg_fail(ctx, CFG_ERR_VALIDATION, msg, field ? field : opt);\n"
+        "    cfg_fail(ctx, CFG_ERR_VALIDATION, kind, msg, field ? field : opt);\n"
         "}\n\n", f);
 
     if (tracker->uses_enum) {
@@ -155,7 +156,7 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
             "    if (origin) snprintf(msg, sizeof(msg), \"invalid value %s (from %s), expected one of: %.300s\", shown, origin, allowed);\n"
             "    else snprintf(msg, sizeof(msg), \"invalid value %s, expected one of: %.300s\", shown, allowed);\n"
             "    char path[256];\n"
-            "    cfg_fail(ctx, CFG_ERR_VALIDATION, msg, cfg_field_path(ctx, field, path, sizeof(path)));\n"
+            "    cfg_fail(ctx, CFG_ERR_VALIDATION, CFG_KIND_INVALID_VALUE, msg, cfg_field_path(ctx, field, path, sizeof(path)));\n"
             "}\n\n", f);
     }
     if (tracker->uses_int) {
@@ -262,13 +263,13 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
             "    char *buf = (char*)malloc(len), *cursor, *item;\n"
             "    *data = NULL;\n"
             "    *count = 0;\n"
-            "    if (!buf) { cfg_fail(ctx, CFG_ERR_VALIDATION, \"out of memory\", field); return; }\n"
+            "    if (!buf) { cfg_fail(ctx, CFG_ERR_VALIDATION, CFG_KIND_OUT_OF_MEMORY, \"out of memory\", field); return; }\n"
             "    memcpy(buf, val, len);\n"
             "    cursor = buf;\n"
             "    while (cfg_next_item(&cursor)) n++;\n"
             "    if (n > 0) {\n"
             "        *data = cfg_pool_alloc(&ctx->pool, n * elem_size);\n"
-            "        if (!*data) { free(buf); cfg_fail(ctx, CFG_ERR_VALIDATION, \"out of memory\", field); return; }\n"
+            "        if (!*data) { free(buf); cfg_fail(ctx, CFG_ERR_VALIDATION, CFG_KIND_OUT_OF_MEMORY, \"out of memory\", field); return; }\n"
             "        memcpy(buf, val, len);\n"
             "        cursor = buf;\n"
             "        for (size_t i = 0; (item = cfg_next_item(&cursor)) != NULL; i++) {\n"
@@ -389,7 +390,7 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
 
     fprintf(f, "typedef void (*cfg_ini_cb)(cfg_common_context_t *ctx, const char *sec, const char *key, const char *val);\n");
     fprintf(f, "static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, cfg_common_context_t *ctx) {\n");
-    fprintf(f, "    FILE *f = fopen(filename, \"r\"); if (!f) { cfg_fail(ctx, CFG_ERR_OPEN_FILE, \"failed to open file\", filename); return ctx->status; }\n");
+    fprintf(f, "    FILE *f = fopen(filename, \"r\"); if (!f) { cfg_fail(ctx, CFG_ERR_OPEN_FILE, CFG_KIND_OPEN_FILE, \"failed to open file\", filename); return ctx->status; }\n");
     fprintf(f, "    char line[4096], section[256] = \"\";\n");
     fprintf(f, "    while (fgets(line, sizeof(line), f)) {\n");
     fprintf(f, "        ctx->line++; char *p = line; while(isspace(*p)) p++;\n");
@@ -404,7 +405,7 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
     fprintf(f, "                strncpy(section, p + 1, len);\n");
     fprintf(f, "                section[len] = '\\0';\n");
     fprintf(f, "                if (is_array) cb(ctx, section, NULL, NULL);\n");
-    fprintf(f, "            } else { cfg_fail(ctx, CFG_ERR_SYNTAX, \"missing closing bracket for section\", section); }\n");
+    fprintf(f, "            } else { cfg_fail(ctx, CFG_ERR_SYNTAX, CFG_KIND_SYNTAX, \"missing closing bracket for section\", section); }\n");
     fprintf(f, "        } else {\n");
     fprintf(f, "            char *eq = strchr(p, '=');\n");
     fprintf(f, "            if (eq) {\n");
@@ -439,7 +440,7 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
     fprintf(f, "                }\n");
     fprintf(f, "                cb(ctx, section, key, val);\n");
     fprintf(f, "            } else {\n");
-    fprintf(f, "                cfg_fail(ctx, CFG_ERR_SYNTAX, \"missing assignment operator\", p);\n");
+    fprintf(f, "                cfg_fail(ctx, CFG_ERR_SYNTAX, CFG_KIND_SYNTAX, \"missing assignment operator\", p);\n");
     fprintf(f, "            }\n");
     fprintf(f, "        }\n");
     fprintf(f, "    }\n");
@@ -491,11 +492,25 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
     fprintf(f, "    CFG_ERR_VALIDATION,\n");
     fprintf(f, "} cfg_status_t;\n\n");
 
-    fprintf(f, "typedef struct {\n");
-    fprintf(f, "    char message[512];\n");
-    fprintf(f, "    char field[256];\n");
-    fprintf(f, "    size_t line;\n");
-    fprintf(f, "} cfg_error_t;\n\n");
+    fputs(
+        "/* What went wrong, independent of the message text. */\n"
+        "typedef enum {\n"
+        "    CFG_KIND_NONE = 0,       /* no error, or a hook failed without setting one */\n"
+        "    CFG_KIND_OPEN_FILE,      /* the INI file could not be opened */\n"
+        "    CFG_KIND_SYNTAX,         /* malformed INI line */\n"
+        "    CFG_KIND_INVALID_VALUE,  /* value is not valid for the field's type or enum */\n"
+        "    CFG_KIND_UNKNOWN_KEY,    /* INI key or section, or --Schema.* option, matches no field */\n"
+        "    CFG_KIND_MISSING,        /* required field not provided, or CLI option without a value */\n"
+        "    CFG_KIND_CONSTRAINT,     /* range, min/max, length, pattern or exists check failed */\n"
+        "    CFG_KIND_HOOK,           /* a validation hook returned false */\n"
+        "    CFG_KIND_OUT_OF_MEMORY\n"
+        "} cfg_error_kind_t;\n\n"
+        "typedef struct {\n"
+        "    char message[512];\n"
+        "    char field[256];\n"
+        "    size_t line;\n"
+        "    cfg_error_kind_t kind;\n"
+        "} cfg_error_t;\n\n", f);
 
     fprintf(f, "static inline void cfg_set_error(cfg_error_t *err, const char *msg, const char *field, size_t line) {\n");
     fprintf(f, "    if (!err) return;\n");
@@ -575,7 +590,9 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         emit_validation_ctx_prototypes(f, schema, get_str(schema->data.schema_decl.name));
     }
     fprintf(f, "\n/* Used by the validators: report a failure on cfg->FIELD with the line that set it. */\n");
-    fprintf(f, "#define CFG_FAILF(field, ...) do { cfg_set_errorf(err, #field, cfg_line_of(lctx, &cfg->field), __VA_ARGS__); return false; } while (0)\n\n");
+    fprintf(f, "#define CFG_FAIL_KIND(k, field, ...) do { cfg_set_errorf(err, #field, cfg_line_of(lctx, &cfg->field), __VA_ARGS__); if (err) err->kind = (k); return false; } while (0)\n");
+    fprintf(f, "#define CFG_FAILF(field, ...) CFG_FAIL_KIND(CFG_KIND_CONSTRAINT, field, __VA_ARGS__)\n");
+    fprintf(f, "#define CFG_MISSING(field, ...) CFG_FAIL_KIND(CFG_KIND_MISSING, field, __VA_ARGS__)\n\n");
 
     for (size_t i = 0; i < prog->schemas->count; i++) {
         AstNode *schema = *(AstNode**)dynarray_get(prog->schemas, i);
@@ -605,7 +622,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "        if (key) snprintf(msg, sizeof(msg), \"unknown key '%%.100s' in section [%%.300s]\", key, sec);\n");
         fprintf(f, "        else snprintf(msg, sizeof(msg), \"unknown array section [[%%.300s]]\", sec);\n");
         fprintf(f, "        char path[256];\n");
-        fprintf(f, "        cfg_fail(ctx, CFG_ERR_VALIDATION, msg, key ? cfg_field_path(ctx, key, path, sizeof(path)) : (ctx->path[0] ? ctx->path : sec));\n");
+        fprintf(f, "        cfg_fail(ctx, CFG_ERR_VALIDATION, CFG_KIND_UNKNOWN_KEY, msg, key ? cfg_field_path(ctx, key, path, sizeof(path)) : (ctx->path[0] ? ctx->path : sec));\n");
         fprintf(f, "#endif\n");
         fprintf(f, "    }\n");
         fprintf(f, "}\n\n");
@@ -646,7 +663,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "}\n\n");
     }
 
-    fprintf(f, "#undef CFG_FAILF\n\n");
+    fprintf(f, "#undef CFG_MISSING\n#undef CFG_FAILF\n#undef CFG_FAIL_KIND\n\n");
     fprintf(f, "#endif /* CONFIG_IMPLEMENTATION */\n");
 
     fclose(f);

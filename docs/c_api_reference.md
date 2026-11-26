@@ -185,5 +185,21 @@ typedef struct {
     char message[512]; // Error description
     char field[256];   // Path to the failing field, e.g. "db.port" or "servers[1].host"
     size_t line;       // INI line that set the failing value (0 if not from the INI file)
+    cfg_error_kind_t kind; // What went wrong (see below)
 } cfg_error_t;
 ```
+
+### `cfg_error_kind_t`
+`kind` classifies the error without parsing `message`:
+
+| Kind | Meaning | Status |
+|---|---|---|
+| `CFG_KIND_NONE` | No error | `CFG_SUCCESS` |
+| `CFG_KIND_OPEN_FILE` | The INI file could not be opened | `CFG_ERR_OPEN_FILE` |
+| `CFG_KIND_SYNTAX` | Malformed INI line | `CFG_ERR_SYNTAX` |
+| `CFG_KIND_INVALID_VALUE` | Value not valid for the field's type or enum | `CFG_ERR_VALIDATION` |
+| `CFG_KIND_UNKNOWN_KEY` | Unknown INI key or section, or unknown `--Schema.` option | `CFG_ERR_VALIDATION` |
+| `CFG_KIND_MISSING` | Required field not provided, or option given without a value | `CFG_ERR_VALIDATION` |
+| `CFG_KIND_CONSTRAINT` | `range`, `min`/`max`, length, `pattern` or `exists` failed | `CFG_ERR_VALIDATION` |
+| `CFG_KIND_HOOK` | A validation hook returned `false` | `CFG_ERR_VALIDATION` |
+| `CFG_KIND_OUT_OF_MEMORY` | An allocation failed | `CFG_ERR_VALIDATION` |

@@ -817,6 +817,40 @@ int main(int argc, char **argv) {
         }
     }
 
+    // Test 63: Each kind of failure reports its cfg_error_kind_t
+    total_tests++;
+    printf("\nTest %d: Error Kinds...\n", total_tests);
+    {
+        static const struct { const char *ini, *arg; cfg_error_kind_t kind; } kind_cases[] = {
+            { "non_existent.ini", NULL, CFG_KIND_OPEN_FILE },
+            { "integration_broken_syntax.ini", NULL, CFG_KIND_SYNTAX },
+            { "integration_bad_int.ini", NULL, CFG_KIND_INVALID_VALUE },
+            { "integration_bad_enum.ini", NULL, CFG_KIND_INVALID_VALUE },
+            { "integration_unknown_key.ini", NULL, CFG_KIND_UNKNOWN_KEY },
+            { "integration_perfect.ini", "--TestSuite.nope=1", CFG_KIND_UNKNOWN_KEY },
+            { "integration_perfect.ini", "--TestSuite.version", CFG_KIND_MISSING },
+            { "integration_broken_validation.ini", NULL, CFG_KIND_MISSING },
+            { "integration_line_range.ini", NULL, CFG_KIND_CONSTRAINT },
+        };
+        int ok = 0, n = (int)(sizeof(kind_cases) / sizeof(kind_cases[0]));
+        for (int i = 0; i < n; i++) {
+            const char *kargv[] = { "program", kind_cases[i].arg };
+            cfg_status_t st = TestSuite_load(&cfg, kind_cases[i].ini, kind_cases[i].arg ? 2 : 1, kargv, &err);
+            if (st == CFG_SUCCESS) TestSuite_free(&cfg);
+            if (st != CFG_SUCCESS && err.kind == kind_cases[i].kind) ok++;
+            else printf("  %s %s: kind %d, expected %d (%s)\n", kind_cases[i].ini, kind_cases[i].arg ? kind_cases[i].arg : "",
+                        (int)err.kind, (int)kind_cases[i].kind, err.message);
+        }
+        if (EdgeCaseTest_load(&edge, "integration_hook_fail.ini", 1, (const char**)argv, &err) != CFG_SUCCESS && err.kind == CFG_KIND_HOOK) ok++;
+        else printf("  hook: kind %d (%s)\n", (int)err.kind, err.message);
+        if (TestSuite_load(&cfg, "integration_perfect.ini", 1, (const char**)argv, &err) == CFG_SUCCESS) {
+            if (err.kind == CFG_KIND_NONE) ok++;
+            TestSuite_free(&cfg);
+        }
+        if (ok == n + 2) { printf("PASSED: All %d kinds correct.\n", ok); tests_passed++; }
+        else printf("FAILED: %d of %d kinds correct.\n", ok, n + 2);
+    }
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 

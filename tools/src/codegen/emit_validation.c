@@ -161,7 +161,7 @@ static void emit_validation_logic(FILE *f, AstNode *field, const char *prefix, c
             if (can_be_empty(field) || field_needs_presence(field)) {
                 fprintf(f, "    if (");
                 emit_field_empty_check(f, field, prefix);
-                fprintf(f, ") CFG_FAILF(%s, \"required field missing\");\n", fname);
+                fprintf(f, ") CFG_MISSING(%s, \"required field missing\");\n", fname);
             }
         } else if (strcmp(pname, "required_if") == 0) {
             if (can_be_empty(field) || field_needs_presence(field)) {
@@ -171,7 +171,7 @@ static void emit_validation_logic(FILE *f, AstNode *field, const char *prefix, c
                 emit_condition_expression(f, pv, prefix, parent_name, items);
                 fprintf(f, " && ");
                 emit_field_empty_check(f, field, prefix);
-                fprintf(f, ") CFG_FAILF(%s, \"required field missing (required when %%s)\", ", fname);
+                fprintf(f, ") CFG_MISSING(%s, \"required field missing (required when %%s)\", ", fname);
                 emit_c_string_n(f, cond, strlen(cond));
                 fprintf(f, ");\n");
             }
@@ -186,6 +186,7 @@ static void emit_validation_logic(FILE *f, AstNode *field, const char *prefix, c
             fprintf(f, "    if (!%s(%s%s, err)) {\n", hook_name, is_str ? "" : "&", v);
             fprintf(f, "        if (err && !err->field[0]) cfg_set_error(err, err->message[0] ? NULL : \"rejected by hook '%s'\", \"%s\", 0);\n", hook_name, fname);
             fprintf(f, "        if (err && !err->line) err->line = cfg_line_of(lctx, &%s);\n", v);
+            fprintf(f, "        if (err) err->kind = CFG_KIND_HOOK;\n");
             fprintf(f, "        return false;\n");
             fprintf(f, "    }\n");
         }
