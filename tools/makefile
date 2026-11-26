@@ -18,7 +18,7 @@ INVALID_DIR := tests/invalid_schemas
 all: $(BIN)
 
 $(BIN): $(SRCS)
-	@mkdir -p $(OUT_DIR)
+	@mkdir -p $(OUT_DIR) $(OUT_DIR)/quickstart
 	$(CC) $(CFLAGS) $(SRCS) -o $(BIN)
 
 test: $(BIN)
@@ -31,6 +31,10 @@ test: $(BIN)
 	@echo "--- Checking header guard for a non-identifier filename ---"
 	./$(BIN) -o $(OUT_DIR)/2nd-config.h $(TEST_DIR)/multi.schema
 	printf '#include "2nd-config.h"\nint main(void) { return 0; }\n' | $(CC) $(CFLAGS) -Werror -I$(OUT_DIR) -x c - -o $(OUT_DIR)/guard_check
+	@echo "--- Building and running the README quick-start ---"
+	./$(BIN) -o $(OUT_DIR)/quickstart/config.h tests/quickstart/app.schema
+	$(CC) $(CFLAGS) -Werror -I$(OUT_DIR)/quickstart tests/quickstart/main.c -o $(OUT_DIR)/quickstart/app
+	cd tests/quickstart && ../../$(OUT_DIR)/quickstart/app | grep -q "App: my-application on port 5432"
 	@echo "--- Checking that invalid schemas are rejected ---"
 	@fail=0; for s in $(INVALID_DIR)/*.schema; do \
 		if ./$(BIN) -o $(OUT_DIR)/invalid.h $$s >/dev/null 2>&1; then echo "FAILED: accepted $$s"; fail=1; \
