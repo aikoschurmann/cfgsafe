@@ -100,6 +100,8 @@ host = "127.0.0.1" # This is also an inline comment
 - **`string` / `path`**: UTF-8 text. Can be quoted (`"value"`) or unquoted. Quotes are recommended for values containing spaces.
 - **`ipv4`**: Standard dot-decimal notation (e.g., `127.0.0.1`).
 
+Values are parsed strictly: a value that is not a complete, valid literal of the field's type (for example `80abc` for an `int`, `yes` for a `bool`, or `1.2.3.4.5` for an `ipv4`) makes loading fail with `CFG_ERR_VALIDATION`, naming the field and line. The same rules apply to values from environment variables and the command line.
+
 ### Enumerations
 Use the literal name defined in the schema (case-sensitive).
 

@@ -35,4 +35,11 @@ void emit_env_overrides_recursive(CodegenContext *ctx, UsageTracker *tracker, FI
 void emit_cli_parser_recursive(CodegenContext *ctx, FILE *f, AstNode *node, const char *prefix, const char *path_prefix, const char *parent_name);
 void emit_regex_validator(FILE *f, const char *re_str, int idx);
 
+/* Emits a checked conversion of the C string expression `val` into the scalar
+ * lvalue `lhs`. On failure the generated code records an error through
+ * `ctx_expr` (a cfg_common_context_t*). `origin` is a C expression naming the
+ * value's source for the message, e.g. "\"env PORT\"", or "NULL". */
+void emit_scalar_parse(FILE *f, const char *indent, const char *tname, const char *lhs,
+                       const char *val, const char *field, const char *ctx_expr, const char *origin);
+
 #endif /* CODEGEN_COMMON_H */

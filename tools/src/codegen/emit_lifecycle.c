@@ -1,6 +1,22 @@
 #include <string.h>
 #include "codegen/codegen_common.h"
 
+void emit_scalar_parse(FILE *f, const char *indent, const char *tname, const char *lhs,
+                       const char *val, const char *field, const char *ctx_expr, const char *origin) {
+    const char *fn = NULL, *kind = NULL;
+    if (strcmp(tname, "int") == 0) { fn = "cfg_parse_int"; kind = "integer"; }
+    else if (strcmp(tname, "float") == 0) { fn = "cfg_parse_float"; kind = "float"; }
+    else if (strcmp(tname, "bool") == 0) { fn = "cfg_parse_bool"; kind = "boolean"; }
+    else if (strcmp(tname, "ipv4") == 0) { fn = "cfg_parse_ipv4"; kind = "IPv4"; }
+
+    if (fn) {
+        fprintf(f, "%sif (!%s(%s, &%s)) cfg_fail_value(%s, \"%s\", \"%s\", %s, %s);\n",
+                indent, fn, val, lhs, ctx_expr, kind, field, val, origin);
+    } else if (strcmp(tname, "string") == 0 || strcmp(tname, "path") == 0) {
+        fprintf(f, "%s%s = cfg_intern_string(%s, %s);\n", indent, lhs, ctx_expr, val);
+    }
+}
+
 static void emit_default_initialization(FILE *f, AstNode *field, const char *prefix, const char *parent_name, const char *ctx_name) {
     InternResult *name = field->data.field_decl.name;
     DynArray *props = field->data.field_decl.properties;
@@ -60,17 +76,15 @@ static void emit_env_overrides(UsageTracker *tracker, FILE *f, AstNode *field, c
     }
 
     if (env_var) {
-        fprintf(f, "    { const char *e = getenv(\"%s\"); if (e) { ", env_var);
         AstType *type = &field->data.field_decl.type->data.ast_type;
         if (type->kind == AST_TYPE_PRIMITIVE) {
-            const char *tname = get_str(type->u.primitive.name);
-            if (strcmp(tname, "int") == 0) fprintf(f, "%s%s = strtoll(e, NULL, 10);", prefix, get_str(name));
-            else if (strcmp(tname, "float") == 0) fprintf(f, "%s%s = strtod(e, NULL);", prefix, get_str(name));
-            else if (strcmp(tname, "bool") == 0) fprintf(f, "%s%s = (strcmp(e, \"true\") == 0 || strcmp(e, \"1\") == 0);", prefix, get_str(name));
-            else if (strcmp(tname, "string") == 0 || strcmp(tname, "path") == 0) fprintf(f, "%s%s = cfg_intern_string(%s, e);", prefix, get_str(name), ctx_name);
-            else if (strcmp(tname, "ipv4") == 0) fprintf(f, "cfg_parse_ipv4(e, &%s%s);", prefix, get_str(name));
+            char lhs[512], origin[300];
+            snprintf(lhs, sizeof(lhs), "%s%s", prefix, get_str(name));
+            snprintf(origin, sizeof(origin), "\"env %s\"", env_var);
+            fprintf(f, "    { const char *e = getenv(\"%s\"); if (e) {\n", env_var);
+            emit_scalar_parse(f, "        ", get_str(type->u.primitive.name), lhs, "e", get_str(name), ctx_name, origin);
+            fprintf(f, "    } }\n");
         }
-        fprintf(f, " } }\n");
     }
 }
 
@@ -151,12 +165,10 @@ static void emit_ini_handler_body(CodegenContext *ctx, FILE *f, AstNode *node, c
 
             emit_indent(f, target_depth + 2); fprintf(f, "if (strcmp(key, \"%s\") == 0) {\n", fname);
             if (type->kind == AST_TYPE_PRIMITIVE) {
-                const char *tname = get_str(type->u.primitive.name);
-                if (strcmp(tname, "int") == 0) { emit_indent(f, target_depth + 3); fprintf(f, "%s%s = strtoll(val, NULL, 10);\n", prefix, fname); }
-                else if (strcmp(tname, "float") == 0) { emit_indent(f, target_depth + 3); fprintf(f, "%s%s = strtod(val, NULL);\n", prefix, fname); }
-                else if (strcmp(tname, "bool") == 0) { emit_indent(f, target_depth + 3); fprintf(f, "%s%s = (strcmp(val, \"true\") == 0 || strcmp(val, \"1\") == 0);\n", prefix, fname); }
-                else if (strcmp(tname, "string") == 0 || strcmp(tname, "path") == 0) { emit_indent(f, target_depth + 3); fprintf(f, "%s%s = cfg_intern_string(ctx, val);\n", prefix, fname); }
-                else if (strcmp(tname, "ipv4") == 0) { emit_indent(f, target_depth + 3); fprintf(f, "cfg_parse_ipv4(val, &%s%s);\n", prefix, fname); }
+                char lhs[512];
+                snprintf(lhs, sizeof(lhs), "%s%s", prefix, fname);
+                emit_indent(f, target_depth + 3);
+                emit_scalar_parse(f, "", get_str(type->u.primitive.name), lhs, "val", fname, "ctx", "NULL");
             } else if (type->kind == AST_TYPE_ENUM) {
                 DynArray *members = type->u.enum_type.enum_decl->data.enum_type.members;
                 for (size_t k = 0; k < members->count; k++) {
@@ -262,13 +274,18 @@ static void emit_cli_parser(CodegenContext *ctx, FILE *f, AstNode *schema, const
     fprintf(f, "    return false;\n");
     fprintf(f, "}\n\n");
 
-    fprintf(f, "void %s_parse_cli(%s_t *cfg, int argc, const char **argv) {\n", schema_name, schema_name);
-    fprintf(f, "    if (!cfg || !argv || argc <= 1) return;\n");
-    fprintf(f, "    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool };\n");
+    fprintf(f, "static void %s_parse_cli_ctx(cfg_common_context_t *ctx, int argc, const char **argv) {\n", schema_name);
+    fprintf(f, "    if (!argv || argc <= 1) return;\n");
     fprintf(f, "    for (int i = 1; i < argc; i++) {\n");
     fprintf(f, "        if (argv[i][0] != '-') continue;\n");
-    fprintf(f, "        %s_parse_arg(&ctx, argc, argv, &i);\n", schema_name);
+    fprintf(f, "        %s_parse_arg(ctx, argc, argv, &i);\n", schema_name);
     fprintf(f, "    }\n");
+    fprintf(f, "}\n\n");
+
+    fprintf(f, "void %s_parse_cli(%s_t *cfg, int argc, const char **argv) {\n", schema_name, schema_name);
+    fprintf(f, "    if (!cfg) return;\n");
+    fprintf(f, "    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool, NULL, 0, CFG_SUCCESS };\n");
+    fprintf(f, "    %s_parse_cli_ctx(&ctx, argc, argv);\n", schema_name);
     fprintf(f, "    cfg->internal_pool = ctx.pool;\n");
     fprintf(f, "}\n\n");
 }
