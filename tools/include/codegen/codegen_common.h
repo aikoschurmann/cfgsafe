@@ -15,6 +15,7 @@ typedef struct {
     bool uses_strlen;
     bool uses_access;
     bool uses_getenv;
+    bool uses_enum;
     bool uses_array;        /* any non-struct array */
     bool uses_array_int;
     bool uses_array_float;
@@ -49,6 +50,10 @@ void emit_regex_validator(FILE *f, const char *re_str, int idx);
  * (a { T *data; size_t count; } struct) using the element type's parser. */
 void emit_array_parse(FILE *f, const char *indent, AstNode *elem_type, const char *lhs,
                       const char *val, const char *field, const char *ctx_expr, const char *origin);
+/* Emits matching of `val` against the members of `enum_type`, assigning
+ * <enum_prefix>_<member> to `lhs`, or recording an error if nothing matches. */
+void emit_enum_parse(FILE *f, const char *indent, AstType *enum_type, const char *lhs, const char *enum_prefix,
+                     const char *val, const char *field, const char *ctx_expr, const char *origin);
 void emit_scalar_parse(FILE *f, const char *indent, const char *tname, const char *lhs,
                        const char *val, const char *field, const char *ctx_expr, const char *origin);
 

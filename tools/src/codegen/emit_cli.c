@@ -73,13 +73,10 @@ void emit_cli_parser_recursive(CodegenContext *ctx, FILE *f, AstNode *node, cons
                 fprintf(f, ") {\n");
                 fprintf(f, "        if (i + 1 < argc) {\n");
                 fprintf(f, "            const char *val = argv[++i];\n");
-                DynArray *members = type_node->data.ast_type.u.enum_type.enum_decl->data.enum_type.members;
-                for (size_t k = 0; k < members->count; k++) {
-                    InternResult *member = *(InternResult**)dynarray_get(members, k);
-                    const char *mname = get_str(member);
-                    fprintf(f, "            %sif (strcmp(val, \"%s\") == 0) %s%s = %s_%s_%s;\n", 
-                        (k == 0 ? "" : "else "), mname, prefix, fname, parent_name, fname, mname);
-                }
+                char lhs[600], enum_prefix[512];
+                snprintf(lhs, sizeof(lhs), "%s%s", prefix, fname);
+                snprintf(enum_prefix, sizeof(enum_prefix), "%s_%s", parent_name, fname);
+                emit_enum_parse(f, "            ", &type_node->data.ast_type, lhs, enum_prefix, "val", fname, "ctx", "\"command line\"");
                 fprintf(f, "            *index = i; return true;\n");
                 fprintf(f, "        }\n");
                 fprintf(f, "    }\n");
