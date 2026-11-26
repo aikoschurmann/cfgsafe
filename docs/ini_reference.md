@@ -144,6 +144,14 @@ nodes = host1, host2, host3
 ports = 80, 443, 8080
 ```
 
+Elements can be quoted, and commas inside a quoted element do not split it:
+
+```ini
+labels = "eu-west, primary", backup   ; 2 elements: "eu-west, primary" and "backup"
+```
+
+If the whole value is a single quoted string, the quotes are removed before splitting (`"a, b"` is two elements). To write a one-element list whose element contains a comma, add a trailing comma: `labels = "eu-west, primary",`. Empty elements are skipped.
+
 ---
 
 ## Complete Example
