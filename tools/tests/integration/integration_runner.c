@@ -616,6 +616,41 @@ int main(int argc, char **argv) {
         }
     }
 
+    // Test 48: Misspelled option in the schema's namespace
+    total_tests++;
+    printf("\nTest %d: Unknown CLI Option...\n", total_tests);
+    const char *unknown_cli[] = { "program", "--TestSuite.verison=3" };
+    tests_passed += expect_load_error("integration_perfect.ini", 2, unknown_cli, CFG_ERR_VALIDATION, "--TestSuite.verison=3",
+                                      "unknown option '--TestSuite.verison=3'", 0);
+
+    // Test 49: Option that needs a value given as the last argument
+    total_tests++;
+    printf("\nTest %d: CLI Option Missing Its Value...\n", total_tests);
+    const char *missing_cli[] = { "program", "--TestSuite.version" };
+    tests_passed += expect_load_error("integration_perfect.ini", 2, missing_cli, CFG_ERR_VALIDATION, "version",
+                                      "missing value for option '--TestSuite.version'", 0);
+
+    // Test 50: --opt=value for enums, arrays and bools; application options are left alone
+    total_tests++;
+    printf("\nTest %d: CLI --opt=value Forms and Foreign Options...\n", total_tests);
+    const char *eq_cli[] = { "program", "--verbose", "--TestSuite.global_level=ERROR",
+                             "--TestSuite.level1.level2.level3.level4.tags=x,y,z",
+                             "--TestSuite.level1.level2.level3.debug_mode=false", "-q" };
+    if (TestSuite_load(&cfg, "integration_perfect.ini", 6, eq_cli, &err) == CFG_SUCCESS) {
+        if (cfg.global_level == TestSuite_global_level_ERROR &&
+            cfg.level1.level2.level3.level4.tags.count == 3 &&
+            cfg.level1.level2.level3.debug_mode == false) {
+            printf("PASSED: All --opt=value forms applied; --verbose and -q ignored.\n");
+            tests_passed++;
+        } else {
+            printf("FAILED: Got level %d, %zu tags, debug %d\n", (int)cfg.global_level,
+                   cfg.level1.level2.level3.level4.tags.count, cfg.level1.level2.level3.debug_mode);
+        }
+        TestSuite_free(&cfg);
+    } else {
+        printf("FAILED: Load failed. Error: %s, Field: %s\n", err.message, err.field);
+    }
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 

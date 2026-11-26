@@ -309,7 +309,11 @@ static void emit_cli_parser(CodegenContext *ctx, FILE *f, AstNode *schema, const
     fprintf(f, "    if (!argv || argc <= 1) return;\n");
     fprintf(f, "    for (int i = 1; i < argc; i++) {\n");
     fprintf(f, "        if (argv[i][0] != '-') continue;\n");
-    fprintf(f, "        %s_parse_arg(ctx, argc, argv, &i);\n", schema_name);
+    fprintf(f, "        if (%s_parse_arg(ctx, argc, argv, &i)) continue;\n", schema_name);
+    fprintf(f, "#ifndef CFG_ALLOW_UNKNOWN_KEYS\n");
+    fprintf(f, "        /* Options outside the --%s. namespace belong to the application. */\n", schema_name);
+    fprintf(f, "        if (strncmp(argv[i], \"--%s.\", %zu) == 0) cfg_fail_arg(ctx, \"unknown option\", argv[i], argv[i]);\n", schema_name, strlen(schema_name) + 3);
+    fprintf(f, "#endif\n");
     fprintf(f, "    }\n");
     fprintf(f, "}\n\n");
 
