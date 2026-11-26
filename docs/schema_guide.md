@@ -442,15 +442,22 @@ schema Patterns {
 ```
 
 **Supported regex features:**
-- `^` — anchor to start
-- `$` — anchor to end
+- `^` — anchor to start (only at the start of the pattern)
+- `$` — anchor to end (only at the end of the pattern)
 - `.` — any character
 - `[abc]` — character class (a, b, or c)
 - `[a-z]` — character range
 - `[^abc]` — negated class (not a, b, or c)
-- `+` — one or more
+- `\d`, `\w`, `\s` — digit, word character, whitespace (`\D`, `\W`, `\S` negate them); also usable inside `[...]`
+- `\<char>` — match a special character literally, e.g. `\.`, `\$`, `\(`
 - `*` — zero or more
+- `+` — one or more
 - `?` — zero or one
+- `{n}`, `{n,}`, `{n,m}` — exactly n, at least n, between n and m
+
+Groups `( )`, alternation `|`, backreferences and lazy quantifiers (`+?`) are **not** supported. `cfg-gen` rejects a pattern that uses them, rather than matching it differently from what you meant. Matching is greedy with backtracking, so patterns like `^.*foo$` behave as in other regex engines.
+
+Remember that backslashes must be doubled inside schema strings: `"^\\d+$"`.
 
 **Examples:**
 - `email = "user@example.com"` passes

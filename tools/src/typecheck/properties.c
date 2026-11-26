@@ -136,6 +136,67 @@ static bool is_valid_env_name(const char *s) {
     return true;
 }
 
+/* Returns NULL if `re` uses only the subset implemented by the generated
+ * cfg_regex_match(), otherwise a description of the first problem. */
+static const char *check_regex_syntax(const char *re) {
+    const char *p = re;
+    if (*p == '^') p++;
+    while (*p) {
+        if (*p == '$') {
+            if (p[1] != '\0') return "'$' is only supported at the end of a pattern (use \\$ for a literal '$')";
+            p++;
+            continue;
+        }
+        if (*p == '(' || *p == ')' || *p == '|') return "groups and alternation are not supported (use \\(, \\) or \\| to match them literally)";
+        if (*p == '*' || *p == '+' || *p == '?' || *p == '{') return "quantifier has nothing to repeat (use \\ to match it literally)";
+        if (*p == '^') return "'^' is only supported at the start of a pattern (use \\^ for a literal '^')";
+
+        /* atom */
+        if (*p == '\\') {
+            if (p[1] == '\0') return "pattern ends with a lone backslash";
+            p += 2;
+        } else if (*p == '[') {
+            p++;
+            if (*p == '^') p++;
+            if (*p == ']') p++;
+            while (*p && *p != ']') {
+                if (*p == '\\') {
+                    if (p[1] == '\0') return "pattern ends with a lone backslash";
+                    p++;
+                }
+                p++;
+            }
+            if (*p != ']') return "unterminated character class '['";
+            p++;
+        } else {
+            p++;
+        }
+
+        /* optional quantifier */
+        if (*p == '*' || *p == '+' || *p == '?') {
+            p++;
+        } else if (*p == '{') {
+            unsigned long lo = 0, hi;
+            p++;
+            if (!isdigit((unsigned char)*p)) return "malformed {n}, {n,} or {n,m} quantifier (use \\{ for a literal '{')";
+            while (isdigit((unsigned char)*p)) { lo = lo * 10 + (unsigned long)(*p++ - '0'); if (lo > 10000) return "quantifier bound is too large (max 10000)"; }
+            hi = lo;
+            if (*p == ',') {
+                p++;
+                if (isdigit((unsigned char)*p)) {
+                    hi = 0;
+                    while (isdigit((unsigned char)*p)) { hi = hi * 10 + (unsigned long)(*p++ - '0'); if (hi > 10000) return "quantifier bound is too large (max 10000)"; }
+                    if (hi < lo) return "quantifier maximum is smaller than its minimum";
+                }
+            }
+            if (*p != '}') return "malformed {n}, {n,} or {n,m} quantifier (use \\{ for a literal '{')";
+            p++;
+        }
+        if (*p == '*' || *p == '+' || *p == '?' || *p == '{') return "stacked or lazy quantifiers (such as 'a+*' or 'a+?') are not supported";
+    }
+    return NULL;
+}
+
 static bool check_enum_member(Arena *arena, Type *field_type, AstNode *literal, char **out_err) {
     if (field_type->kind != TYPE_ENUM) return true;
     if (literal->data.literal.type != IDENTIFIER_LITERAL) return false;
@@ -200,6 +261,16 @@ static bool check_value_matches(Arena *arena, DynArray *errors, const char *file
                     if (!is_valid_ipv4(s)) {
                         *out_err = "invalid IPv4 address format";
                         return false;
+                    }
+                }
+                if (strcmp(prop_name, "pattern") == 0) {
+                    const char *problem = check_regex_syntax(s);
+                    if (problem) {
+                        size_t len = 256;
+                        char *msg = arena_alloc(arena, len);
+                        snprintf(msg, len, "unsupported pattern: %s", problem);
+                        report_type_error(arena, errors, TE_INVALID_FORMAT, value_node->span, filename, NULL, NULL, msg);
+                        return true; /* already reported */
                     }
                 }
                 if (strcmp(prop_name, "env") == 0) {

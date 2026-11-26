@@ -43,7 +43,6 @@ void emit_recursive_ini_handler(CodegenContext *ctx, FILE *f, AstNode *schema, c
 void emit_default_initialization_recursive(CodegenContext *ctx, FILE *f, AstNode *node, const char *prefix, const char *ctx_name);
 void emit_env_overrides_recursive(CodegenContext *ctx, UsageTracker *tracker, FILE *f, AstNode *node, const char *prefix, const char *ctx_name);
 void emit_cli_parser_recursive(CodegenContext *ctx, FILE *f, AstNode *node, const char *prefix, const char *path_prefix, const char *parent_name);
-void emit_regex_validator(FILE *f, const char *re_str, int idx);
 
 /* Emits a checked conversion of the C string expression `val` into the scalar
  * lvalue `lhs`. On failure the generated code records an error through

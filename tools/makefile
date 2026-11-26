@@ -11,6 +11,7 @@ TEST_DIR    := tests/integration
 TEST_RUNNER := $(OUT_DIR)/integration_runner
 TEST_SCHEMA := $(TEST_DIR)/integration.schema
 TEST_HEADER := $(TEST_DIR)/generated_integration.h
+INVALID_DIR := tests/invalid_schemas
 
 .PHONY: all clean test
 
@@ -27,6 +28,11 @@ test: $(BIN)
 	$(CC) $(CFLAGS) -Iinclude -I$(TEST_DIR) $(TEST_DIR)/integration_runner.c -o $(TEST_RUNNER)
 	@echo "--- Running integration tests ---"
 	cd $(TEST_DIR) && ../../$(TEST_RUNNER)
+	@echo "--- Checking that invalid schemas are rejected ---"
+	@fail=0; for s in $(INVALID_DIR)/*.schema; do \
+		if ./$(BIN) -o $(OUT_DIR)/invalid.h $$s >/dev/null 2>&1; then echo "FAILED: accepted $$s"; fail=1; \
+		else echo "PASSED: rejected $$s"; fi; \
+	done; rm -f $(OUT_DIR)/invalid.h; exit $$fail
 
 clean:
 	rm -rf $(OUT_DIR)
