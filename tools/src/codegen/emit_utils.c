@@ -28,7 +28,7 @@ void emit_c_string(FILE *f, InternResult *literal) {
     fputc('"', f);
 }
 
-static bool is_field_secret(AstNode *field) {
+bool field_is_secret(AstNode *field) {
     DynArray *props = field->data.field_decl.properties;
     if (!props) return false;
     for (size_t i = 0; i < props->count; i++) {
@@ -51,7 +51,7 @@ static void emit_print_recursive(CodegenContext *ctx, FILE *f, AstNode *node, co
             InternResult *name = item->data.field_decl.name;
             AstType *type = &item->data.field_decl.type->data.ast_type;
             const char *fname = get_str(name);
-            bool secret = is_field_secret(item);
+            bool secret = field_is_secret(item);
 
             bool is_array_of_schemas = (type->kind == AST_TYPE_ARRAY && type->u.array.elem->data.ast_type.kind == AST_TYPE_PRIMITIVE && is_schema_name(ctx, get_str(type->u.array.elem->data.ast_type.u.primitive.name)));
 

@@ -38,6 +38,8 @@ void emit_c_string(FILE *f, InternResult *literal);
  * (int, float, bool, ipv4, enum). Their presence is tracked in a generated
  * `_present` member of the enclosing struct. */
 bool field_needs_presence(AstNode *field);
+/* True if the field has `secret: true`; its values must never appear in messages. */
+bool field_is_secret(AstNode *field);
 /* Emits `<prefix>_present.<field> = true;` if the field's presence is tracked. */
 void emit_mark_present(FILE *f, const char *indent, AstNode *field, const char *prefix);
 
@@ -51,6 +53,7 @@ void emit_default_initialization_recursive(CodegenContext *ctx, FILE *f, AstNode
 void emit_env_overrides_recursive(CodegenContext *ctx, UsageTracker *tracker, FILE *f, AstNode *node, const char *prefix, const char *ctx_name);
 void emit_cli_parser_recursive(CodegenContext *ctx, FILE *f, AstNode *node, const char *prefix, const char *path_prefix, const char *parent_name);
 
+/* In the emitters below, `secret` keeps the offending value out of the error message. */
 /* Emits a checked conversion of the C string expression `val` into the scalar
  * lvalue `lhs`. On failure the generated code records an error through
  * `ctx_expr` (a cfg_common_context_t*). `origin` is a C expression naming the
@@ -58,12 +61,12 @@ void emit_cli_parser_recursive(CodegenContext *ctx, FILE *f, AstNode *node, cons
 /* Emits parsing of the comma-separated list `val` into the array lvalue `lhs`
  * (a { T *data; size_t count; } struct) using the element type's parser. */
 void emit_array_parse(FILE *f, const char *indent, AstNode *elem_type, const char *lhs,
-                      const char *val, const char *field, const char *ctx_expr, const char *origin);
+                      const char *val, const char *field, const char *ctx_expr, const char *origin, bool secret);
 /* Emits matching of `val` against the members of `enum_type`, assigning
  * <enum_prefix>_<member> to `lhs`, or recording an error if nothing matches. */
 void emit_enum_parse(FILE *f, const char *indent, AstType *enum_type, const char *lhs, const char *enum_prefix,
-                     const char *val, const char *field, const char *ctx_expr, const char *origin);
+                     const char *val, const char *field, const char *ctx_expr, const char *origin, bool secret);
 void emit_scalar_parse(FILE *f, const char *indent, const char *tname, const char *lhs,
-                       const char *val, const char *field, const char *ctx_expr, const char *origin);
+                       const char *val, const char *field, const char *ctx_expr, const char *origin, bool secret);
 
 #endif /* CODEGEN_COMMON_H */

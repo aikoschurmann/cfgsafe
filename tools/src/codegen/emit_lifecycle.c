@@ -2,7 +2,7 @@
 #include "codegen/codegen_common.h"
 
 void emit_array_parse(FILE *f, const char *indent, AstNode *elem_type, const char *lhs,
-                      const char *val, const char *field, const char *ctx_expr, const char *origin) {
+                      const char *val, const char *field, const char *ctx_expr, const char *origin, bool secret) {
     const char *fn = "cfg_elem_string", *kind = "string";
     AstType *elem = &elem_type->data.ast_type;
     if (elem->kind == AST_TYPE_PRIMITIVE) {
@@ -12,19 +12,19 @@ void emit_array_parse(FILE *f, const char *indent, AstNode *elem_type, const cha
         else if (strcmp(ename, "bool") == 0) { fn = "cfg_elem_bool"; kind = "boolean"; }
         else if (strcmp(ename, "ipv4") == 0) { fn = "cfg_elem_ipv4"; kind = "IPv4"; }
     }
-    fprintf(f, "%scfg_parse_array(%s, %s, (void**)&%s.data, &%s.count, sizeof(*%s.data), %s, \"%s\", \"%s\", %s);\n",
-            indent, ctx_expr, val, lhs, lhs, lhs, fn, kind, field, origin);
+    fprintf(f, "%scfg_parse_array(%s, %s, (void**)&%s.data, &%s.count, sizeof(*%s.data), %s, \"%s\", \"%s\", %s, %s);\n",
+            indent, ctx_expr, val, lhs, lhs, lhs, fn, kind, field, origin, secret ? "true" : "false");
 }
 
 void emit_enum_parse(FILE *f, const char *indent, AstType *enum_type, const char *lhs, const char *enum_prefix,
-                     const char *val, const char *field, const char *ctx_expr, const char *origin) {
+                     const char *val, const char *field, const char *ctx_expr, const char *origin, bool secret) {
     DynArray *members = enum_type->u.enum_type.enum_decl->data.enum_type.members;
     for (size_t k = 0; k < members->count; k++) {
         const char *mname = get_str(*(InternResult**)dynarray_get(members, k));
         fprintf(f, "%s%sif (strcmp(%s, \"%s\") == 0) %s = %s_%s;\n",
                 indent, (k == 0 ? "" : "else "), val, mname, lhs, enum_prefix, mname);
     }
-    fprintf(f, "%selse cfg_fail_enum(%s, \"%s\", %s, \"", indent, ctx_expr, field, val);
+    fprintf(f, "%selse cfg_fail_enum(%s, \"%s\", %s, \"", indent, ctx_expr, field, secret ? "NULL" : val);
     for (size_t k = 0; k < members->count; k++) {
         fprintf(f, "%s%s", (k == 0 ? "" : ", "), get_str(*(InternResult**)dynarray_get(members, k)));
     }
@@ -32,7 +32,7 @@ void emit_enum_parse(FILE *f, const char *indent, AstType *enum_type, const char
 }
 
 void emit_scalar_parse(FILE *f, const char *indent, const char *tname, const char *lhs,
-                       const char *val, const char *field, const char *ctx_expr, const char *origin) {
+                       const char *val, const char *field, const char *ctx_expr, const char *origin, bool secret) {
     const char *fn = NULL, *kind = NULL;
     if (strcmp(tname, "int") == 0) { fn = "cfg_parse_int"; kind = "integer"; }
     else if (strcmp(tname, "float") == 0) { fn = "cfg_parse_float"; kind = "float"; }
@@ -41,7 +41,7 @@ void emit_scalar_parse(FILE *f, const char *indent, const char *tname, const cha
 
     if (fn) {
         fprintf(f, "%sif (!%s(%s, &%s)) cfg_fail_value(%s, \"%s\", \"%s\", %s, %s);\n",
-                indent, fn, val, lhs, ctx_expr, kind, field, val, origin);
+                indent, fn, val, lhs, ctx_expr, kind, field, secret ? "NULL" : val, origin);
     } else if (strcmp(tname, "string") == 0 || strcmp(tname, "path") == 0) {
         fprintf(f, "%s%s = cfg_intern_string(%s, %s);\n", indent, lhs, ctx_expr, val);
     }
@@ -117,7 +117,7 @@ static void emit_env_overrides(UsageTracker *tracker, FILE *f, AstNode *field, c
             snprintf(lhs, sizeof(lhs), "%s%s", prefix, get_str(name));
             snprintf(origin, sizeof(origin), "\"env %s\"", env_var);
             fprintf(f, "    { const char *e = getenv(\"%s\"); if (e) {\n", env_var);
-            emit_scalar_parse(f, "        ", get_str(type->u.primitive.name), lhs, "e", get_str(name), ctx_name, origin);
+            emit_scalar_parse(f, "        ", get_str(type->u.primitive.name), lhs, "e", get_str(name), ctx_name, origin, field_is_secret(field));
             emit_mark_present(f, "        ", field, prefix);
             fprintf(f, "    } }\n");
         }
@@ -204,13 +204,13 @@ static void emit_ini_handler_body(CodegenContext *ctx, FILE *f, AstNode *node, c
                 char lhs[512];
                 snprintf(lhs, sizeof(lhs), "%s%s", prefix, fname);
                 emit_indent(f, target_depth + 3);
-                emit_scalar_parse(f, "", get_str(type->u.primitive.name), lhs, "val", fname, "ctx", "NULL");
+                emit_scalar_parse(f, "", get_str(type->u.primitive.name), lhs, "val", fname, "ctx", "NULL", field_is_secret(item));
             } else if (type->kind == AST_TYPE_ENUM) {
                 char lhs[512], enum_prefix[512], indent[64];
                 snprintf(lhs, sizeof(lhs), "%s%s", prefix, fname);
                 snprintf(enum_prefix, sizeof(enum_prefix), "%s_%s", parent_name, fname);
                 snprintf(indent, sizeof(indent), "%*s", (target_depth + 3) * 4, "");
-                emit_enum_parse(f, indent, type, lhs, enum_prefix, "val", fname, "ctx", "NULL");
+                emit_enum_parse(f, indent, type, lhs, enum_prefix, "val", fname, "ctx", "NULL", field_is_secret(item));
             } else if (type->kind == AST_TYPE_ARRAY) {
                 AstNode *elem = type->u.array.elem;
                 bool is_struct_array = elem->data.ast_type.kind == AST_TYPE_PRIMITIVE &&
@@ -219,7 +219,7 @@ static void emit_ini_handler_body(CodegenContext *ctx, FILE *f, AstNode *node, c
                     char lhs[512];
                     snprintf(lhs, sizeof(lhs), "%s%s", prefix, fname);
                     emit_indent(f, target_depth + 3);
-                    emit_array_parse(f, "", elem, lhs, "val", fname, "ctx", "NULL");
+                    emit_array_parse(f, "", elem, lhs, "val", fname, "ctx", "NULL", field_is_secret(item));
                 }
             }
             char indent[64];
@@ -313,7 +313,7 @@ static void emit_cli_parser(CodegenContext *ctx, FILE *f, AstNode *schema, const
     fprintf(f, "        if (%s_parse_arg(ctx, argc, argv, &i)) continue;\n", schema_name);
     fprintf(f, "#ifndef CFG_ALLOW_UNKNOWN_KEYS\n");
     fprintf(f, "        /* Options outside the --%s. namespace belong to the application. */\n", schema_name);
-    fprintf(f, "        if (strncmp(argv[i], \"--%s.\", %zu) == 0) cfg_fail_arg(ctx, \"unknown option\", argv[i], argv[i]);\n", schema_name, strlen(schema_name) + 3);
+    fprintf(f, "        if (strncmp(argv[i], \"--%s.\", %zu) == 0) cfg_fail_arg(ctx, \"unknown option\", argv[i], NULL);\n", schema_name, strlen(schema_name) + 3);
     fprintf(f, "#endif\n");
     fprintf(f, "    }\n");
     fprintf(f, "}\n\n");

@@ -18,13 +18,13 @@ static void emit_cli_value_body(FILE *f, AstNode *field, AstType *type, const ch
     char lhs[600];
     snprintf(lhs, sizeof(lhs), "%s%s", prefix, fname);
     if (type->kind == AST_TYPE_PRIMITIVE) {
-        emit_scalar_parse(f, "        ", get_str(type->u.primitive.name), lhs, "val", fname, "ctx", "\"command line\"");
+        emit_scalar_parse(f, "        ", get_str(type->u.primitive.name), lhs, "val", fname, "ctx", "\"command line\"", field_is_secret(field));
     } else if (type->kind == AST_TYPE_ENUM) {
         char enum_prefix[512];
         snprintf(enum_prefix, sizeof(enum_prefix), "%s_%s", parent_name, fname);
-        emit_enum_parse(f, "        ", type, lhs, enum_prefix, "val", fname, "ctx", "\"command line\"");
+        emit_enum_parse(f, "        ", type, lhs, enum_prefix, "val", fname, "ctx", "\"command line\"", field_is_secret(field));
     } else {
-        emit_array_parse(f, "        ", type->u.array.elem, lhs, "val", fname, "ctx", "\"command line\"");
+        emit_array_parse(f, "        ", type->u.array.elem, lhs, "val", fname, "ctx", "\"command line\"", field_is_secret(field));
     }
     emit_mark_present(f, "        ", field, prefix);
 }

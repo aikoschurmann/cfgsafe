@@ -620,8 +620,8 @@ int main(int argc, char **argv) {
     total_tests++;
     printf("\nTest %d: Unknown CLI Option...\n", total_tests);
     const char *unknown_cli[] = { "program", "--TestSuite.verison=3" };
-    tests_passed += expect_load_error("integration_perfect.ini", 2, unknown_cli, CFG_ERR_VALIDATION, "--TestSuite.verison=3",
-                                      "unknown option '--TestSuite.verison=3'", 0);
+    tests_passed += expect_load_error("integration_perfect.ini", 2, unknown_cli, CFG_ERR_VALIDATION, "--TestSuite.verison",
+                                      "unknown option '--TestSuite.verison' (from command line)", 0);
 
     // Test 49: Option that needs a value given as the last argument
     total_tests++;
@@ -694,6 +694,30 @@ int main(int argc, char **argv) {
         } else {
             printf("FAILED: Load failed. Error: %s, Field: %s, Line: %zu\n", err.message, err.field, err.line);
         }
+    }
+
+    // Test 53: Values of secret fields never appear in error messages
+    total_tests++;
+    printf("\nTest %d: Secret Values Redacted from Errors...\n", total_tests);
+    {
+        const char *bad_pin[] = { "program", "--EdgeCaseTest.pin=12x34" };
+        const char *bad_pins[] = { "program", "--EdgeCaseTest.pins", "1,2x2" };
+        const char *typo_secret[] = { "program", "--EdgeCaseTest.pni=hunter2" };
+        const char *const *cases[] = { bad_pin, bad_pins, typo_secret };
+        const int counts[] = { 2, 3, 2 };
+        const char *leaks[] = { "12x34", "2x2", "hunter2" };
+        const char *expect[] = { "invalid integer value (redacted)", "invalid integer value (redacted)", "unknown option '--EdgeCaseTest.pni'" };
+        int ok = 0;
+        for (int i = 0; i < 3; i++) {
+            if (EdgeCaseTest_load(&edge, "integration_edgecases.ini", counts[i], (const char**)cases[i], &err) == CFG_ERR_VALIDATION &&
+                strstr(err.message, expect[i]) && !strstr(err.message, leaks[i]) && !strstr(err.field, leaks[i])) {
+                ok++;
+            } else {
+                printf("  case %d: field '%s', message '%s'\n", i, err.field, err.message);
+            }
+        }
+        if (ok == 3) { printf("PASSED: No secret value in any message.\n"); tests_passed++; }
+        else printf("FAILED: %d of 3 cases redacted.\n", ok);
     }
 
     printf("\n--- Test Results Summary ---\n");

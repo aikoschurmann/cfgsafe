@@ -340,7 +340,7 @@ schema Mandatory {
 
 #### `secret`
 
-Redacts field value in `_print()` output (shows `********` instead):
+Redacts the field's value in `_print()` output (shows `********` instead) and in error messages (`invalid integer value (redacted)`):
 
 ```scala
 schema Secrets {
@@ -359,7 +359,9 @@ public_field = "visible_value"
 --------------------------
 ```
 
-**Note:** This only affects the `_print()` function. The actual value is still accessible in your code as `config.api_key`.
+**Note:** This only affects `_print()` output and error messages. The actual value is still accessible in your code as `config.api_key`.
+
+Unknown command-line options are always reported by name only (`unknown option '--App.pasword'`), because a misspelled secret option carries the secret after the `=`.
 
 ### Numeric Properties (`int`, `float`)
 
