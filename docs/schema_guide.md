@@ -674,7 +674,7 @@ When you call `SchemaName_load()`, values are resolved in this strict order (hig
 
 1. **CLI Arguments** (highest priority)
    - Format: `--SchemaName.field.path=value`
-   - Boolean flags: `--SchemaName.debug` (sets to true)
+   - Boolean flags: `--SchemaName.debug` (sets to true), or `--SchemaName.debug=false`
    - Arrays: `--SchemaName.nodes=ip1,ip2,ip3`
 
 2. **Environment Variables**
@@ -718,6 +718,7 @@ schema App {
 
 # Boolean flags (just presence sets to true)
 --App.debug
+--App.debug=false      # Explicit value
 
 # Nested sections
 --App.database.host=db.example.com
@@ -737,6 +738,8 @@ schema App {
   --App.database.timeout=120 \
   --App.nodes=10.0.0.1,10.0.0.2,10.0.0.3
 ```
+
+Options starting with `--App.` are checked: an unknown one (such as a typo) or one missing its value fails the load with `CFG_ERR_VALIDATION`. Other arguments, like your application's own `--verbose`, are ignored. Defining `CFG_ALLOW_UNKNOWN_KEYS` before the implementation also allows unknown `--App.` options.
 
 ### Precedence Example
 

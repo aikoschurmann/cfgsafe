@@ -70,6 +70,11 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
         "    if (origin) snprintf(msg, sizeof(msg), \"invalid %s value '%.200s' (from %s)\", kind, val, origin);\n"
         "    else snprintf(msg, sizeof(msg), \"invalid %s value '%.200s'\", kind, val);\n"
         "    cfg_fail(ctx, CFG_ERR_VALIDATION, msg, field);\n"
+        "}\n\n"
+        "static void cfg_fail_arg(cfg_common_context_t *ctx, const char *what, const char *arg, const char *field) {\n"
+        "    char msg[512];\n"
+        "    snprintf(msg, sizeof(msg), \"%s '%.300s' (from command line)\", what, arg);\n"
+        "    cfg_fail(ctx, CFG_ERR_VALIDATION, msg, field);\n"
         "}\n\n", f);
 
     if (tracker->uses_enum) {
