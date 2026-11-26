@@ -112,6 +112,8 @@ Keys that do not correspond to a schema field, inside any section that belongs t
 
 Setting the same key twice in a section, including through a repeated section header, fails with `CFG_ERR_SYNTAX` (`duplicate key 'port' (already set on line 3)`). Entries of an array of structs (`[[...]]`) each have their own keys, and environment and command-line values may override INI values. Define `CFG_ALLOW_DUPLICATE_KEYS` to let the last value win instead.
 
+**Limits:** a line may be at most 4095 characters, a section name at most 255 characters, and a section at most 32 levels deep (counting the schema name). Input beyond these limits fails with `CFG_ERR_SYNTAX` rather than being truncated; keys under a section header that couldn't be read are skipped.
+
 ### Enumerations
 Use the literal name defined in the schema (case-sensitive).
 

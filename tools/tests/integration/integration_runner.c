@@ -928,6 +928,31 @@ int main(int argc, char **argv) {
         }
     }
 
+    // Test 68-70: Input beyond the reader's limits is reported instead of truncated
+    {
+        static const struct { const char *name, *ini, *msg; size_t line; } limit_cases[] = {
+            { "line too long", "integration_long_line.ini", "line is too long (limit 4095 characters)", 2 },
+            { "section name too long", "integration_long_section.ini", "section name is too long (limit 255 characters)", 4 },
+            { "section nested too deeply", "integration_deep_section.ini", "section is nested too deeply (limit 32 levels)", 5 },
+        };
+        for (size_t i = 0; i < sizeof(limit_cases) / sizeof(limit_cases[0]); i++) {
+            error_list_t list;
+            memset(&list, 0, sizeof(list));
+            total_tests++;
+            printf("\nTest %d: Reader Limit (%s)...\n", total_tests, limit_cases[i].name);
+            // Collect everything: the rest of an over-long line must not show up as further errors.
+            cfg_status_t st = TestSuite_load_report(&cfg, limit_cases[i].ini, 1, (const char**)argv, &err, collect_error, &list);
+            if (st == CFG_ERR_SYNTAX && list.count == 1 && strcmp(list.errors[0].message, limit_cases[i].msg) == 0 &&
+                list.errors[0].line == limit_cases[i].line && list.errors[0].kind == CFG_KIND_SYNTAX) {
+                printf("PASSED: %s (line %zu)\n", list.errors[0].message, list.errors[0].line);
+                tests_passed++;
+            } else {
+                printf("FAILED: status %d, %d errors\n", (int)st, list.count);
+                for (int k = 0; k < list.count && k < 16; k++) printf("  %s:%zu %s\n", list.errors[k].field, list.errors[k].line, list.errors[k].message);
+            }
+        }
+    }
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 
