@@ -133,6 +133,7 @@ schema Conditions {
     kind_val: string { required_if: kind == "special" }
     gw: ipv4 { default: "0.0.0.0" }
     gw_name: string { required_if: gw == "10.0.0.1" }
+    token: string { secret: true, pattern: "^tok_[a-z]+$" }
     section net {
         proto: enum(TCP, UDP) { default: TCP }
         udp_buf: int { required_if: proto == UDP }

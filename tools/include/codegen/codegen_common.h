@@ -33,6 +33,8 @@ const char* map_primitive_to_c(const char* name);
 /* Writes a string literal from the schema as a quoted, escaped C string literal.
  * An empty or missing literal is written as "". */
 void emit_c_string(FILE *f, InternResult *literal);
+/* Same, for `len` bytes of an arbitrary string. */
+void emit_c_string_n(FILE *f, const char *s, size_t len);
 
 /* True for required/required_if fields whose C value cannot represent "unset"
  * (int, float, bool, ipv4, enum). Their presence is tracked in a generated

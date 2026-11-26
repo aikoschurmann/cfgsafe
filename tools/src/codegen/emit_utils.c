@@ -2,12 +2,14 @@
 #include "codegen/codegen_common.h"
 
 void emit_c_string(FILE *f, InternResult *literal) {
-    const char *s = "";
-    size_t len = 0;
     if (literal && literal->key && ((Slice*)literal->key)->ptr) {
-        s = ((Slice*)literal->key)->ptr;
-        len = ((Slice*)literal->key)->len;
+        emit_c_string_n(f, ((Slice*)literal->key)->ptr, ((Slice*)literal->key)->len);
+    } else {
+        emit_c_string_n(f, "", 0);
     }
+}
+
+void emit_c_string_n(FILE *f, const char *s, size_t len) {
     fputc('"', f);
     for (size_t i = 0; i < len; i++) {
         unsigned char c = (unsigned char)s[i];

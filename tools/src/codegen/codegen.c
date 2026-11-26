@@ -98,6 +98,21 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
         "    ctx->status = status;\n"
         "    cfg_set_error(ctx->err, msg, field, ctx->line);\n"
         "}\n\n"
+        , f);
+
+    fputs(
+        "#if defined(__GNUC__)\n"
+        "__attribute__((format(printf, 4, 5)))\n"
+        "#endif\n"
+        "static inline void cfg_set_errorf(cfg_error_t *err, const char *field, size_t line, const char *fmt, ...) {\n"
+        "    char msg[sizeof(err->message)];\n"
+        "    va_list ap;\n"
+        "    if (!err) return;\n"
+        "    va_start(ap, fmt);\n"
+        "    vsnprintf(msg, sizeof(msg), fmt, ap);\n"
+        "    va_end(ap);\n"
+        "    cfg_set_error(err, msg, field, line);\n"
+        "}\n\n"
         "/* Qualifies an INI field name with the current section path, e.g. \"db.port\". */\n"
         "static const char *cfg_field_path(const cfg_common_context_t *ctx, const char *field, char *buf, size_t n) {\n"
         "    if (!ctx->path || !ctx->path[0] || !field) return field;\n"
@@ -538,6 +553,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
     fprintf(f, "#include <ctype.h>\n");
     fprintf(f, "#include <errno.h>\n");
     fprintf(f, "#include <stdint.h>\n");
+    fprintf(f, "#include <stdarg.h>\n");
 
     if (tracker.uses_access) {
         fprintf(f, "\n#ifndef CFG_FILE_EXISTS\n");
@@ -559,7 +575,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         emit_validation_ctx_prototypes(f, schema, get_str(schema->data.schema_decl.name));
     }
     fprintf(f, "\n/* Used by the validators: report a failure on cfg->FIELD with the line that set it. */\n");
-    fprintf(f, "#define CFG_FAIL(msg, field) do { cfg_set_error(err, msg, #field, cfg_line_of(lctx, &cfg->field)); return false; } while (0)\n\n");
+    fprintf(f, "#define CFG_FAILF(field, ...) do { cfg_set_errorf(err, #field, cfg_line_of(lctx, &cfg->field), __VA_ARGS__); return false; } while (0)\n\n");
 
     for (size_t i = 0; i < prog->schemas->count; i++) {
         AstNode *schema = *(AstNode**)dynarray_get(prog->schemas, i);
@@ -630,7 +646,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "}\n\n");
     }
 
-    fprintf(f, "#undef CFG_FAIL\n\n");
+    fprintf(f, "#undef CFG_FAILF\n\n");
     fprintf(f, "#endif /* CONFIG_IMPLEMENTATION */\n");
 
     fclose(f);

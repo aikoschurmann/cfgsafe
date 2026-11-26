@@ -68,92 +68,124 @@ static void emit_field_empty_check(FILE *f, AstNode *field, const char *prefix) 
     }
 }
 
+/* Writes the condition of a required_if as text for messages, e.g. `mode == ADVANCED`. */
+static void condition_text(AstNode *cond_node, char *buf, size_t n) {
+    AstCondition *cond = &cond_node->data.condition;
+    AstNode *rhs = cond->right;
+    const char *lhs = get_str(cond->left);
+    switch (rhs->data.literal.type) {
+        case INT_LITERAL: snprintf(buf, n, "%s == %lld", lhs, rhs->data.literal.value.int_val); break;
+        case FLOAT_LITERAL: snprintf(buf, n, "%s == %g", lhs, rhs->data.literal.value.float_val); break;
+        case BOOL_LITERAL: snprintf(buf, n, "%s == %s", lhs, rhs->data.literal.value.bool_val ? "true" : "false"); break;
+        case STRING_LITERAL: snprintf(buf, n, "%s == \"%s\"", lhs, get_str(rhs->data.literal.value.string_val)); break;
+        case IDENTIFIER_LITERAL: snprintf(buf, n, "%s == %s", lhs, get_str(rhs->data.literal.value.string_val)); break;
+        default: snprintf(buf, n, "%s", lhs); break;
+    }
+}
+
+/* Emits the constraint checks for one field. Each failure goes through
+ * CFG_FAILF(field, fmt, ...), defined around the validators in codegen.c.
+ * Values of secret fields are left out of the messages. */
 static void emit_validation_logic(FILE *f, AstNode *field, const char *prefix, const char *parent_name, DynArray *items) {
-    InternResult *name = field->data.field_decl.name;
     DynArray *props = field->data.field_decl.properties;
-    const char *fname = get_str(name);
-    
+    const char *fname = get_str(field->data.field_decl.name);
+    bool secret = field_is_secret(field);
+    bool is_array = field->data.field_decl.type->data.ast_type.kind == AST_TYPE_ARRAY;
+    char v[600];
+    snprintf(v, sizeof(v), "%s%s", prefix, fname);
+
     for (size_t i = 0; i < props->count; i++) {
         AstNode *pnode = *(AstNode**)dynarray_get(props, i);
         AstPropertyDecl *prop = &pnode->data.property_decl;
         const char *pname = get_str(prop->name);
+        AstNode *pv = prop->value;
 
         if (strcmp(pname, "range") == 0) {
-            AstRangeExpr *range = &prop->value->data.range_expr;
+            AstRangeExpr *range = &pv->data.range_expr;
             if (range->min->data.literal.type == INT_LITERAL) {
-                fprintf(f, "    if (%s%s < %lld || %s%s > %lld) { CFG_FAIL(\"value out of range\", %s); }\n", 
-                    prefix, fname, range->min->data.literal.value.int_val,
-                    prefix, fname, range->max->data.literal.value.int_val, fname);
+                long long lo = range->min->data.literal.value.int_val, hi = range->max->data.literal.value.int_val;
+                fprintf(f, "    if (%s < %lldLL || %s > %lldLL) ", v, lo, v, hi);
+                if (secret) fprintf(f, "CFG_FAILF(%s, \"value is out of range %lld..%lld\");\n", fname, lo, hi);
+                else fprintf(f, "CFG_FAILF(%s, \"value %%lld is out of range %lld..%lld\", (long long)%s);\n", fname, lo, hi, v);
             } else {
-                fprintf(f, "    if (%s%s < %.17g || %s%s > %.17g) { CFG_FAIL(\"value out of range\", %s); }\n", 
-                    prefix, fname, range->min->data.literal.value.float_val,
-                    prefix, fname, range->max->data.literal.value.float_val, fname);
+                double lo = range->min->data.literal.value.float_val, hi = range->max->data.literal.value.float_val;
+                fprintf(f, "    if (%s < %.17g || %s > %.17g) ", v, lo, v, hi);
+                if (secret) fprintf(f, "CFG_FAILF(%s, \"value is out of range %g..%g\");\n", fname, lo, hi);
+                else fprintf(f, "CFG_FAILF(%s, \"value %%g is out of range %g..%g\", %s);\n", fname, lo, hi, v);
             }
-                } else if (strcmp(pname, "min") == 0) {
-                    if (prop->value->data.literal.type == INT_LITERAL) {
-                        fprintf(f, "    if (%s%s < %lld) { CFG_FAIL(\"value too small\", %s); }\n", prefix, fname, prop->value->data.literal.value.int_val, fname);
-                    } else {
-                        fprintf(f, "    if (%s%s < %.17g) { CFG_FAIL(\"value too small\", %s); }\n", prefix, fname, prop->value->data.literal.value.float_val, fname);
-                    }
-                } else if (strcmp(pname, "max") == 0) {
-                    if (prop->value->data.literal.type == INT_LITERAL) {
-                        fprintf(f, "    if (%s%s > %lld) { CFG_FAIL(\"value too large\", %s); }\n", prefix, fname, prop->value->data.literal.value.int_val, fname);
-                    } else {
-                        fprintf(f, "    if (%s%s > %.17g) { CFG_FAIL(\"value too large\", %s); }\n", prefix, fname, prop->value->data.literal.value.float_val, fname);
-                    }
-                }
-         else if (strcmp(pname, "min_length") == 0) {
-            if (field->data.field_decl.type->data.ast_type.kind == AST_TYPE_ARRAY) {
-                fprintf(f, "    if (%s%s.count < %lld) { CFG_FAIL(\"array too short\", %s); }\n", prefix, fname, prop->value->data.literal.value.int_val, fname);
+        } else if (strcmp(pname, "min") == 0 || strcmp(pname, "max") == 0) {
+            bool is_min = pname[1] == 'i';
+            const char *op = is_min ? "<" : ">", *what = is_min ? "below the minimum" : "above the maximum";
+            if (pv->data.literal.type == INT_LITERAL) {
+                long long b = pv->data.literal.value.int_val;
+                fprintf(f, "    if (%s %s %lldLL) ", v, op, b);
+                if (secret) fprintf(f, "CFG_FAILF(%s, \"value is %s %lld\");\n", fname, what, b);
+                else fprintf(f, "CFG_FAILF(%s, \"value %%lld is %s %lld\", (long long)%s);\n", fname, what, b, v);
             } else {
-                fprintf(f, "    if (%s%s != NULL && strlen(%s%s) < %lld) { CFG_FAIL(\"string too short\", %s); }\n", 
-                        prefix, fname, prefix, fname, prop->value->data.literal.value.int_val, fname);
+                double b = pv->data.literal.value.float_val;
+                fprintf(f, "    if (%s %s %.17g) ", v, op, b);
+                if (secret) fprintf(f, "CFG_FAILF(%s, \"value is %s %g\");\n", fname, what, b);
+                else fprintf(f, "CFG_FAILF(%s, \"value %%g is %s %g\", %s);\n", fname, what, b, v);
             }
-        } else if (strcmp(pname, "max_length") == 0) {
-            if (field->data.field_decl.type->data.ast_type.kind == AST_TYPE_ARRAY) {
-                fprintf(f, "    if (%s%s.count > %lld) { CFG_FAIL(\"array too long\", %s); }\n", prefix, fname, prop->value->data.literal.value.int_val, fname);
+        } else if (strcmp(pname, "min_length") == 0 || strcmp(pname, "max_length") == 0) {
+            bool is_min = pname[1] == 'i';
+            long long b = pv->data.literal.value.int_val;
+            const char *op = is_min ? "<" : ">";
+            if (is_array) {
+                fprintf(f, "    if (%s.count %s %lld) CFG_FAILF(%s, \"array has %%zu elements, %s %lld\", %s.count);\n",
+                        v, op, b, fname, is_min ? "fewer than the minimum of" : "more than the maximum of", b, v);
             } else {
-                fprintf(f, "    if (%s%s != NULL && strlen(%s%s) > %lld) { CFG_FAIL(\"string too long\", %s); }\n", 
-                        prefix, fname, prefix, fname, prop->value->data.literal.value.int_val, fname);
+                fprintf(f, "    if (%s != NULL && strlen(%s) %s %lld) CFG_FAILF(%s, \"string is %%zu characters long, %s %lld\", strlen(%s));\n",
+                        v, v, op, b, fname, is_min ? "shorter than the minimum of" : "longer than the maximum of", b, v);
             }
-        } else if (strcmp(pname, "exists") == 0 && prop->value->data.literal.value.bool_val) {
-            AstType *type = &field->data.field_decl.type->data.ast_type;
-            if (type->kind == AST_TYPE_ARRAY) {
-                fprintf(f, "    for (size_t i = 0; i < %s%s.count; i++) {\n", prefix, fname);
-                fprintf(f, "        if (%s%s.data[i] != NULL && !CFG_FILE_EXISTS(%s%s.data[i])) { CFG_FAIL(\"file does not exist in array\", %s); }\n", prefix, fname, prefix, fname, fname);
+        } else if (strcmp(pname, "exists") == 0 && pv->data.literal.value.bool_val) {
+            if (is_array) {
+                fprintf(f, "    for (size_t i = 0; i < %s.count; i++) {\n", v);
+                fprintf(f, "        if (%s.data[i] != NULL && !CFG_FILE_EXISTS(%s.data[i])) ", v, v);
+                if (secret) fprintf(f, "CFG_FAILF(%s, \"element %%zu: file does not exist\", i);\n", fname);
+                else fprintf(f, "CFG_FAILF(%s, \"element %%zu: file '%%.200s' does not exist\", i, %s.data[i]);\n", fname, v);
                 fprintf(f, "    }\n");
             } else {
-                fprintf(f, "    if (%s%s != NULL && !CFG_FILE_EXISTS(%s%s)) { CFG_FAIL(\"file does not exist\", %s); }\n", prefix, fname, prefix, fname, fname);
+                fprintf(f, "    if (%s != NULL && !CFG_FILE_EXISTS(%s)) ", v, v);
+                if (secret) fprintf(f, "CFG_FAILF(%s, \"file does not exist\");\n", fname);
+                else fprintf(f, "CFG_FAILF(%s, \"file '%%.200s' does not exist\", %s);\n", fname, v);
             }
         } else if (strcmp(pname, "pattern") == 0) {
-            fprintf(f, "    if (%s%s != NULL && !cfg_regex_match(", prefix, fname);
-            emit_c_string(f, prop->value->data.literal.value.string_val);
-            fprintf(f, ", %s%s)) { CFG_FAIL(\"pattern mismatch\", %s); }\n", prefix, fname, fname);
-        } else if (strcmp(pname, "required") == 0 && prop->value->data.literal.value.bool_val) {
+            fprintf(f, "    if (%s != NULL && !cfg_regex_match(", v);
+            emit_c_string(f, pv->data.literal.value.string_val);
+            if (secret) fprintf(f, ", %s)) CFG_FAILF(%s, \"value does not match the pattern %%s\", ", v, fname);
+            else fprintf(f, ", %s)) CFG_FAILF(%s, \"value '%%.200s' does not match the pattern %%s\", %s, ", v, fname, v);
+            emit_c_string(f, pv->data.literal.value.string_val);
+            fprintf(f, ");\n");
+        } else if (strcmp(pname, "required") == 0 && pv->data.literal.value.bool_val) {
             if (can_be_empty(field) || field_needs_presence(field)) {
                 fprintf(f, "    if (");
                 emit_field_empty_check(f, field, prefix);
-                fprintf(f, ") { CFG_FAIL(\"required field missing\", %s); }\n", fname);
+                fprintf(f, ") CFG_FAILF(%s, \"required field missing\");\n", fname);
             }
         } else if (strcmp(pname, "required_if") == 0) {
             if (can_be_empty(field) || field_needs_presence(field)) {
+                char cond[300];
+                condition_text(pv, cond, sizeof(cond));
                 fprintf(f, "    if (");
-                emit_condition_expression(f, prop->value, prefix, parent_name, items);
-                fprintf(f, ") {\n        if (");
+                emit_condition_expression(f, pv, prefix, parent_name, items);
+                fprintf(f, " && ");
                 emit_field_empty_check(f, field, prefix);
-                fprintf(f, ") { CFG_FAIL(\"field required by condition missing\", %s); }\n    }\n", fname);
+                fprintf(f, ") CFG_FAILF(%s, \"required field missing (required when %%s)\", ", fname);
+                emit_c_string_n(f, cond, strlen(cond));
+                fprintf(f, ");\n");
             }
         } else if (strcmp(pname, "hook") == 0) {
-            const char *hook_name = get_str(prop->value->data.literal.value.string_val);
+            const char *hook_name = get_str(pv->data.literal.value.string_val);
             AstType *type = &field->data.field_decl.type->data.ast_type;
             bool is_str = (type->kind == AST_TYPE_PRIMITIVE && 
                           (strcmp(get_str(type->u.primitive.name), "string") == 0 || 
                            strcmp(get_str(type->u.primitive.name), "path") == 0));
             
             /* A hook may set its own message; fill in whatever it left empty. */
-            fprintf(f, "    if (!%s(%s%s%s, err)) {\n", hook_name, is_str ? "" : "&", prefix, fname);
+            fprintf(f, "    if (!%s(%s%s, err)) {\n", hook_name, is_str ? "" : "&", v);
             fprintf(f, "        if (err && !err->field[0]) cfg_set_error(err, err->message[0] ? NULL : \"rejected by hook '%s'\", \"%s\", 0);\n", hook_name, fname);
-            fprintf(f, "        if (err && !err->line) err->line = cfg_line_of(lctx, &%s%s);\n", prefix, fname);
+            fprintf(f, "        if (err && !err->line) err->line = cfg_line_of(lctx, &%s);\n", v);
             fprintf(f, "        return false;\n");
             fprintf(f, "    }\n");
         }

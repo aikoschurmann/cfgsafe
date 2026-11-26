@@ -783,6 +783,40 @@ int main(int argc, char **argv) {
         else printf("FAILED: %d of 6 line numbers correct.\n", ok);
     }
 
+    // Test 56-61: Constraint messages show the value and the limit
+    {
+        static const struct { const char *name, *ini, *arg, *field, *msg; } msg_cases[] = {
+            { "range", "integration_line_range.ini", NULL, "version", "value 101 is out of range 1..100" },
+            { "max", "integration_perfect.ini", "--TestSuite.level1.factor=2.5", "level1.factor", "value 2.5 is above the maximum 1" },
+            { "min_length", "integration_perfect.ini", "--TestSuite.project_name=ab", "project_name", "string is 2 characters long, shorter than the minimum of 3" },
+            { "pattern", "integration_perfect.ini", "--TestSuite.project_name=has space", "project_name", "value 'has space' does not match the pattern ^[A-Za-z0-9_-]+$" },
+            { "exists", "integration_perfect.ini", "--TestSuite.level1.level2.level3.log_file=/nonexistent/x.log", "level1.level2.level3.log_file", "file '/nonexistent/x.log' does not exist" },
+            { "required_if", "integration_defaults.ini", "--TestSuite.level1.level2.level3.debug_mode", "level1.level2.level3.log_file", "required field missing (required when debug_mode == true)" },
+        };
+        for (size_t i = 0; i < sizeof(msg_cases) / sizeof(msg_cases[0]); i++) {
+            const char *margv[] = { "program", msg_cases[i].arg };
+            total_tests++;
+            printf("\nTest %d: Constraint Message (%s)...\n", total_tests, msg_cases[i].name);
+            tests_passed += expect_load_error(msg_cases[i].ini, msg_cases[i].arg ? 2 : 1, margv, CFG_ERR_VALIDATION,
+                                              msg_cases[i].field, msg_cases[i].msg, ANY_LINE);
+        }
+    }
+
+    // Test 62: Constraint messages leave out values of secret fields
+    total_tests++;
+    printf("\nTest %d: Constraint Message for a Secret Field...\n", total_tests);
+    {
+        Conditions_t cond;
+        const char *tok_argv[] = { "program", "--Conditions.token=hunter2" };
+        if (Conditions_load(&cond, "integration_empty.ini", 2, tok_argv, &err) == CFG_ERR_VALIDATION &&
+            strcmp(err.message, "value does not match the pattern ^tok_[a-z]+$") == 0 && !strstr(err.message, "hunter2")) {
+            printf("PASSED: %s\n", err.message);
+            tests_passed++;
+        } else {
+            printf("FAILED: field '%s', message '%s'\n", err.field, err.message);
+        }
+    }
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 
