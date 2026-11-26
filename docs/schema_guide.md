@@ -326,10 +326,13 @@ schema Mandatory {
 - Field has a value from CLI argument, OR
 - Field has a `default` property
 
-**For strings/paths/arrays:**
+**For strings/paths:**
 - Empty string `""` counts as provided
-- Empty array counts as provided
 - Use `min_length: 1` if you need non-empty
+
+**For arrays:**
+- An empty array (for example `tags =`) counts as **missing**, since it can't be told apart from an absent one
+- To allow an empty list, leave out `required` and use `min_length`/`max_length` as needed
 
 **For int/float/bool/enum/ipv4:**
 - Any explicit value counts as provided, including `0`, `0.0`, `false` and `0.0.0.0`
