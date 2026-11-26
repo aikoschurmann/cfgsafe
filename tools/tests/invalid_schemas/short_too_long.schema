@@ -1,0 +1,3 @@
+schema S {
+    a: int { short: "vv" }
+}
