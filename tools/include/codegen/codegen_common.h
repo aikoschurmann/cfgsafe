@@ -34,6 +34,13 @@ const char* map_primitive_to_c(const char* name);
  * An empty or missing literal is written as "". */
 void emit_c_string(FILE *f, InternResult *literal);
 
+/* True for required/required_if fields whose C value cannot represent "unset"
+ * (int, float, bool, ipv4, enum). Their presence is tracked in a generated
+ * `_present` member of the enclosing struct. */
+bool field_needs_presence(AstNode *field);
+/* Emits `<prefix>_present.<field> = true;` if the field's presence is tracked. */
+void emit_mark_present(FILE *f, const char *indent, AstNode *field, const char *prefix);
+
 void track_usage(AstNode *node, UsageTracker *tracker);
 void emit_section_or_schema(CodegenContext *ctx, FILE *f, AstNode *node, const char* name);
 void emit_validation_prototypes(FILE *f, AstNode *node, const char *name);

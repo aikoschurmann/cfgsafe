@@ -47,11 +47,14 @@ void emit_cli_parser_recursive(CodegenContext *ctx, FILE *f, AstNode *node, cons
                 fprintf(f, ") {\n");
                 
                 if (strcmp(tname, "bool") == 0) {
-                    fprintf(f, "        %s%s = true; return true;\n", prefix, fname);
+                    fprintf(f, "        %s%s = true;\n", prefix, fname);
+                    emit_mark_present(f, "        ", item, prefix);
+                    fprintf(f, "        return true;\n");
                 } else {
                     fprintf(f, "        if (i + 1 < argc) {\n");
                     fprintf(f, "            const char *val = argv[++i];\n");
                     emit_scalar_parse(f, "            ", tname, lhs, "val", fname, "ctx", "\"command line\"");
+                    emit_mark_present(f, "            ", item, prefix);
                     fprintf(f, "            *index = i; return true;\n");
                     fprintf(f, "        }\n");
                 }
@@ -62,6 +65,7 @@ void emit_cli_parser_recursive(CodegenContext *ctx, FILE *f, AstNode *node, cons
                     fprintf(f, "    if (strncmp(arg, \"--%s=\", %zu) == 0) {\n", full_path, strlen(full_path) + 3);
                     fprintf(f, "        const char *val = arg + %zu;\n", strlen(full_path) + 3);
                     emit_scalar_parse(f, "        ", tname, lhs, "val", fname, "ctx", "\"command line\"");
+                    emit_mark_present(f, "        ", item, prefix);
                     fprintf(f, "        return true;\n");
                     fprintf(f, "    }\n");
                 }
@@ -77,6 +81,7 @@ void emit_cli_parser_recursive(CodegenContext *ctx, FILE *f, AstNode *node, cons
                 snprintf(lhs, sizeof(lhs), "%s%s", prefix, fname);
                 snprintf(enum_prefix, sizeof(enum_prefix), "%s_%s", parent_name, fname);
                 emit_enum_parse(f, "            ", &type_node->data.ast_type, lhs, enum_prefix, "val", fname, "ctx", "\"command line\"");
+                emit_mark_present(f, "            ", item, prefix);
                 fprintf(f, "            *index = i; return true;\n");
                 fprintf(f, "        }\n");
                 fprintf(f, "    }\n");

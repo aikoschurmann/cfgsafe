@@ -112,3 +112,13 @@ schema EdgeCaseTest {
         key_with_dash: string { default: "dash" }
     }
 }
+
+schema RequiredScalars {
+    port: int { required: true }
+    ratio: float { required: true }
+    verbose: bool { required: true }
+    mode: enum(FAST, SAFE) { required: true }
+    addr: ipv4 { required: true }
+    use_tls: bool { default: false }
+    tls_port: int { required_if: use_tls == true }
+}

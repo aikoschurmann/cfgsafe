@@ -32,7 +32,9 @@ static void emit_field_empty_check(FILE *f, AstNode *field, const char *prefix) 
     InternResult *name = field->data.field_decl.name;
     AstType *type = &field->data.field_decl.type->data.ast_type;
     
-    if (type->kind == AST_TYPE_ARRAY) {
+    if (field_needs_presence(field)) {
+        fprintf(f, "!%s_present.%s", prefix, get_str(name));
+    } else if (type->kind == AST_TYPE_ARRAY) {
         fprintf(f, "%s%s.count == 0", prefix, get_str(name));
     } else {
         fprintf(f, "%s%s == NULL", prefix, get_str(name));
@@ -101,13 +103,13 @@ static void emit_validation_logic(FILE *f, AstNode *field, const char *prefix) {
             emit_c_string(f, prop->value->data.literal.value.string_val);
             fprintf(f, ", %s%s)) { cfg_set_error(err, \"pattern mismatch\", \"%s\", 0); return false; }\n", prefix, fname, fname);
         } else if (strcmp(pname, "required") == 0 && prop->value->data.literal.value.bool_val) {
-            if (can_be_empty(field)) {
+            if (can_be_empty(field) || field_needs_presence(field)) {
                 fprintf(f, "    if (");
                 emit_field_empty_check(f, field, prefix);
                 fprintf(f, ") { cfg_set_error(err, \"required field missing\", \"%s\", 0); return false; }\n", fname);
             }
         } else if (strcmp(pname, "required_if") == 0) {
-            if (can_be_empty(field)) {
+            if (can_be_empty(field) || field_needs_presence(field)) {
                 fprintf(f, "    if (");
                 emit_condition_expression(f, prop->value, prefix);
                 fprintf(f, ") {\n        if (");

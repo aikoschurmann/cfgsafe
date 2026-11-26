@@ -331,6 +331,10 @@ schema Mandatory {
 - Empty array counts as provided
 - Use `min_length: 1` if you need non-empty
 
+**For int/float/bool/enum/ipv4:**
+- Any explicit value counts as provided, including `0`, `0.0`, `false` and `0.0.0.0`
+- The generated struct gets a `_present` member recording which of these fields were provided (for example `cfg._present.port`)
+
 #### `secret`
 
 Redacts field value in `_print()` output (shows `********` instead):
