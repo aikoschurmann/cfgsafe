@@ -46,6 +46,7 @@ void emit_mark_present(FILE *f, const char *indent, AstNode *field, const char *
 void track_usage(AstNode *node, UsageTracker *tracker);
 void emit_section_or_schema(CodegenContext *ctx, FILE *f, AstNode *node, const char* name);
 void emit_validation_prototypes(FILE *f, AstNode *node, const char *name);
+void emit_validation_ctx_prototypes(FILE *f, AstNode *node, const char *name);
 void emit_validation_function(UsageTracker *tracker, CodegenContext *ctx, FILE *f, AstNode *node, const char *name);
 void emit_print_function(CodegenContext *ctx, FILE *f, AstNode *schema, const char *schema_name);
 void emit_recursive_ini_handler(CodegenContext *ctx, FILE *f, AstNode *schema, const char *schema_name);

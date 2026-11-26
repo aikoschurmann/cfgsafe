@@ -53,13 +53,45 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
 
     fputs(
         "typedef struct {\n"
+        "    const void *addr; /* field that was assigned */\n"
+        "    size_t line;      /* INI line, or 0 for env/CLI */\n"
+        "} cfg_line_entry_t;\n\n"
+        "typedef struct {\n"
         "    void *cfg;\n"
         "    cfg_pool_node_t *pool;\n"
         "    cfg_error_t *err;\n"
         "    size_t line;\n"
         "    cfg_status_t status;\n"
         "    const char *path; /* dotted section path of the INI key being parsed, or NULL */\n"
+        "    cfg_line_entry_t *lines; /* where each field was last set, for validation errors */\n"
+        "    size_t nlines, lines_cap;\n"
         "} cfg_common_context_t;\n\n"
+        "/* Line tracking is best effort: on allocation failure lines are reported as 0. */\n"
+        "static inline void cfg_note_line(cfg_common_context_t *ctx, const void *addr) {\n"
+        "    if (ctx->nlines == ctx->lines_cap) {\n"
+        "        size_t cap = ctx->lines_cap ? ctx->lines_cap * 2 : 32;\n"
+        "        cfg_line_entry_t *p = (cfg_line_entry_t*)realloc(ctx->lines, cap * sizeof(*p));\n"
+        "        if (!p) return;\n"
+        "        ctx->lines = p;\n"
+        "        ctx->lines_cap = cap;\n"
+        "    }\n"
+        "    ctx->lines[ctx->nlines].addr = addr;\n"
+        "    ctx->lines[ctx->nlines].line = ctx->line;\n"
+        "    ctx->nlines++;\n"
+        "}\n\n"
+        "static inline size_t cfg_line_of(const cfg_common_context_t *ctx, const void *addr) {\n"
+        "    if (!ctx) return 0;\n"
+        "    for (size_t i = ctx->nlines; i-- > 0;) if (ctx->lines[i].addr == addr) return ctx->lines[i].line;\n"
+        "    return 0;\n"
+        "}\n\n"
+        "/* Moves recorded addresses when an array of structs is copied to a new buffer. */\n"
+        "static inline void cfg_rebase_lines(cfg_common_context_t *ctx, const void *old_base, size_t size, const void *new_base) {\n"
+        "    uintptr_t lo = (uintptr_t)old_base, hi = lo + size;\n"
+        "    for (size_t i = 0; i < ctx->nlines; i++) {\n"
+        "        uintptr_t a = (uintptr_t)ctx->lines[i].addr;\n"
+        "        if (a >= lo && a < hi) ctx->lines[i].addr = (const char*)new_base + (a - lo);\n"
+        "    }\n"
+        "}\n\n"
         "/* Records the first error only; later errors are usually consequences of it. */\n"
         "static void cfg_fail(cfg_common_context_t *ctx, cfg_status_t status, const char *msg, const char *field) {\n"
         "    if (ctx->status != CFG_SUCCESS) return;\n"
@@ -505,6 +537,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
     fprintf(f, "#include <string.h>\n");
     fprintf(f, "#include <ctype.h>\n");
     fprintf(f, "#include <errno.h>\n");
+    fprintf(f, "#include <stdint.h>\n");
 
     if (tracker.uses_access) {
         fprintf(f, "\n#ifndef CFG_FILE_EXISTS\n");
@@ -520,6 +553,13 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
 
     emit_boilerplate_runtime(ctx, f, &tracker);
 
+
+    for (size_t i = 0; i < prog->schemas->count; i++) {
+        AstNode *schema = *(AstNode**)dynarray_get(prog->schemas, i);
+        emit_validation_ctx_prototypes(f, schema, get_str(schema->data.schema_decl.name));
+    }
+    fprintf(f, "\n/* Used by the validators: report a failure on cfg->FIELD with the line that set it. */\n");
+    fprintf(f, "#define CFG_FAIL(msg, field) do { cfg_set_error(err, msg, #field, cfg_line_of(lctx, &cfg->field)); return false; } while (0)\n\n");
 
     for (size_t i = 0; i < prog->schemas->count; i++) {
         AstNode *schema = *(AstNode**)dynarray_get(prog->schemas, i);
@@ -557,13 +597,14 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "cfg_status_t %s_load(%s_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err) {\n", schema_name, schema_name);
         fprintf(f, "    if (!cfg) return CFG_ERR_VALIDATION;\n");
         fprintf(f, "    memset(cfg, 0, sizeof(%s_t));\n", schema_name);
-        fprintf(f, "    cfg_common_context_t ctx = { cfg, NULL, err, 0, CFG_SUCCESS, NULL };\n");
+        fprintf(f, "    cfg_common_context_t ctx = { cfg, NULL, err, 0, CFG_SUCCESS, NULL, NULL, 0, 0 };\n");
         fprintf(f, "    if (err) memset(err, 0, sizeof(cfg_error_t));\n");
         
         emit_default_initialization_recursive(ctx, f, schema, "cfg->", "&ctx");
 
         fprintf(f, "    if (filename && cfg_parse_ini(filename, %s_ini_handler, &ctx) != CFG_SUCCESS) {\n", schema_name);
         fprintf(f, "        cfg_pool_free(ctx.pool);\n");
+        fprintf(f, "        free(ctx.lines);\n");
         fprintf(f, "        memset(cfg, 0, sizeof(%s_t));\n", schema_name);
         fprintf(f, "        return ctx.status;\n");
         fprintf(f, "    }\n");
@@ -574,9 +615,11 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
 
         fprintf(f, "    %s_parse_cli_ctx(&ctx, argc, argv);\n", schema_name);
         fprintf(f, "    cfg->internal_pool = ctx.pool;\n");
-        fprintf(f, "    if (ctx.status != CFG_SUCCESS) { %s_free(cfg); return ctx.status; }\n", schema_name);
+        fprintf(f, "    if (ctx.status != CFG_SUCCESS) { free(ctx.lines); %s_free(cfg); return ctx.status; }\n", schema_name);
 
-        fprintf(f, "    if (!%s_validate(cfg, err)) { %s_free(cfg); return CFG_ERR_VALIDATION; }\n", schema_name, schema_name);
+        fprintf(f, "    bool valid = %s_validate_ctx(cfg, err, &ctx);\n", schema_name);
+        fprintf(f, "    free(ctx.lines);\n");
+        fprintf(f, "    if (!valid) { %s_free(cfg); return CFG_ERR_VALIDATION; }\n", schema_name);
         fprintf(f, "    return CFG_SUCCESS;\n");
         fprintf(f, "}\n\n");
 
@@ -587,6 +630,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "}\n\n");
     }
 
+    fprintf(f, "#undef CFG_FAIL\n\n");
     fprintf(f, "#endif /* CONFIG_IMPLEMENTATION */\n");
 
     fclose(f);

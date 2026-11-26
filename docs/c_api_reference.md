@@ -175,13 +175,15 @@ bool validate_port(const void *val, cfg_error_t *err) {
 
 Only the first error is reported.
 
-`field` is relative to the struct being loaded or validated, without the schema name: `level1.level2.bind_addr`, `sources[1].target`. For an unknown command-line option it is the option name. If a hook returns `false` without filling in `err`, the field name and the message `rejected by hook '<name>'` are filled in for it.
+`field` is relative to the struct being loaded or validated, without the schema name: `level1.level2.bind_addr`, `sources[1].target`. For an unknown command-line option it is the option name. `line` is set for parse errors and, when loading with `Name_load`, for validation errors too: it is the line that last assigned the failing field. It is 0 when the value came from a default, the environment or the command line, when the field is missing, and when calling `Name_validate` directly.
+
+If a hook returns `false` without filling in `err`, the field name and the message `rejected by hook '<name>'` are filled in for it.
 
 ### `cfg_error_t`
 ```c
 typedef struct {
     char message[512]; // Error description
     char field[256];   // Path to the failing field, e.g. "db.port" or "servers[1].host"
-    size_t line;       // INI line number (0 if not applicable)
+    size_t line;       // INI line that set the failing value (0 if not from the INI file)
 } cfg_error_t;
 ```

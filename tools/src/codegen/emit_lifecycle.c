@@ -14,6 +14,7 @@ void emit_array_parse(FILE *f, const char *indent, AstNode *elem_type, const cha
     }
     fprintf(f, "%scfg_parse_array(%s, %s, (void**)&%s.data, &%s.count, sizeof(*%s.data), %s, \"%s\", \"%s\", %s, %s);\n",
             indent, ctx_expr, val, lhs, lhs, lhs, fn, kind, field, origin, secret ? "true" : "false");
+    fprintf(f, "%scfg_note_line(%s, &%s);\n", indent, ctx_expr, lhs);
 }
 
 void emit_enum_parse(FILE *f, const char *indent, AstType *enum_type, const char *lhs, const char *enum_prefix,
@@ -29,6 +30,7 @@ void emit_enum_parse(FILE *f, const char *indent, AstType *enum_type, const char
         fprintf(f, "%s%s", (k == 0 ? "" : ", "), get_str(*(InternResult**)dynarray_get(members, k)));
     }
     fprintf(f, "\", %s);\n", origin);
+    fprintf(f, "%scfg_note_line(%s, &%s);\n", indent, ctx_expr, lhs);
 }
 
 void emit_scalar_parse(FILE *f, const char *indent, const char *tname, const char *lhs,
@@ -45,6 +47,7 @@ void emit_scalar_parse(FILE *f, const char *indent, const char *tname, const cha
     } else if (strcmp(tname, "string") == 0 || strcmp(tname, "path") == 0) {
         fprintf(f, "%s%s = cfg_intern_string(%s, %s);\n", indent, lhs, ctx_expr, val);
     }
+    fprintf(f, "%scfg_note_line(%s, &%s);\n", indent, ctx_expr, lhs);
 }
 
 static void emit_default_initialization(FILE *f, AstNode *field, const char *prefix, const char *parent_name, const char *ctx_name) {
@@ -271,6 +274,7 @@ static void emit_ini_handler_body(CodegenContext *ctx, FILE *f, AstNode *node, c
                         emit_indent(f, target_depth + 3); fprintf(f, "size_t old_count = %s%s.count;\n", prefix, fname);
                         emit_indent(f, target_depth + 3); fprintf(f, "%s_t *new_data = (%s_t*)cfg_pool_alloc(&ctx->pool, (old_count + 1) * sizeof(%s_t));\n", elem_tname, elem_tname, elem_tname);
                         emit_indent(f, target_depth + 3); fprintf(f, "if (old_count > 0) memcpy(new_data, %s%s.data, old_count * sizeof(%s_t));\n", prefix, fname, elem_tname);
+                        emit_indent(f, target_depth + 3); fprintf(f, "if (old_count > 0) cfg_rebase_lines(ctx, %s%s.data, old_count * sizeof(%s_t), new_data);\n", prefix, fname, elem_tname);
                         emit_indent(f, target_depth + 3); fprintf(f, "memset(&new_data[old_count], 0, sizeof(%s_t));\n", elem_tname);
                         emit_indent(f, target_depth + 3); fprintf(f, "%s%s.data = new_data;\n", prefix, fname);
                         emit_indent(f, target_depth + 3); fprintf(f, "%s%s.count = old_count + 1;\n", prefix, fname);
@@ -322,8 +326,9 @@ static void emit_cli_parser(CodegenContext *ctx, FILE *f, AstNode *schema, const
 
     fprintf(f, "void %s_parse_cli(%s_t *cfg, int argc, const char **argv) {\n", schema_name, schema_name);
     fprintf(f, "    if (!cfg) return;\n");
-    fprintf(f, "    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool, NULL, 0, CFG_SUCCESS, NULL };\n");
+    fprintf(f, "    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool, NULL, 0, CFG_SUCCESS, NULL, NULL, 0, 0 };\n");
     fprintf(f, "    %s_parse_cli_ctx(&ctx, argc, argv);\n", schema_name);
+    fprintf(f, "    free(ctx.lines);\n");
     fprintf(f, "    cfg->internal_pool = ctx.pool;\n");
     fprintf(f, "}\n\n");
 }

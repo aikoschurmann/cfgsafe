@@ -747,6 +747,42 @@ int main(int argc, char **argv) {
         else printf("FAILED: %d of 4 paths correct.\n", ok);
     }
 
+    // Test 55: Validation errors carry the INI line that set the field
+    total_tests++;
+    printf("\nTest %d: Line Numbers in Validation Errors...\n", total_tests);
+    {
+        int ok = 0;
+        // range check on a top-level field (integration_broken_validation.ini: line 2)
+        if (TestSuite_load(&cfg, "integration_line_range.ini", 1, (const char**)argv, &err) == CFG_ERR_VALIDATION &&
+            strcmp(err.field, "version") == 0 && err.line == 3) ok++;
+        else printf("  range: field '%s', line %zu\n", err.field, err.line);
+        // pattern on the second element of an array of structs; the array is reallocated after line 5
+        if (EdgeCaseTest_load(&edge, "integration_bad_array_struct.ini", 1, (const char**)argv, &err) == CFG_ERR_VALIDATION &&
+            err.line == 8) ok++;
+        else printf("  struct array: field '%s', line %zu\n", err.field, err.line);
+        if (EdgeCaseTest_load(&edge, "integration_bad_array_struct_first.ini", 1, (const char**)argv, &err) == CFG_ERR_VALIDATION &&
+            strcmp(err.field, "sources[0].target") == 0 && err.line == 5) ok++;
+        else printf("  first struct of array: field '%s', line %zu\n", err.field, err.line);
+        // hook without its own error, in a nested struct
+        if (EdgeCaseTest_load(&edge, "integration_nested_hook_path.ini", 1, (const char**)argv, &err) == CFG_ERR_VALIDATION &&
+            err.line == 5) ok++;
+        else printf("  nested hook: field '%s', line %zu\n", err.field, err.line);
+        // value overridden on the command line: no INI line applies
+        const char *range_cli[] = { "program", "--TestSuite.version=500" };
+        if (TestSuite_load(&cfg, "integration_line_range.ini", 2, range_cli, &err) == CFG_ERR_VALIDATION &&
+            strcmp(err.field, "version") == 0 && err.line == 0) ok++;
+        else printf("  cli override: field '%s', line %zu\n", err.field, err.line);
+        // public validate has no load context
+        if (TestSuite_load(&cfg, "integration_perfect.ini", 1, (const char**)argv, &err) == CFG_SUCCESS) {
+            cfg.version = 1000;
+            if (!TestSuite_validate(&cfg, &err) && strcmp(err.field, "version") == 0 && err.line == 0) ok++;
+            else printf("  public validate: field '%s', line %zu\n", err.field, err.line);
+            TestSuite_free(&cfg);
+        }
+        if (ok == 6) { printf("PASSED: All 6 line numbers correct.\n"); tests_passed++; }
+        else printf("FAILED: %d of 6 line numbers correct.\n", ok);
+    }
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 
