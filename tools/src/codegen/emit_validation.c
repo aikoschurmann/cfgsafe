@@ -85,7 +85,7 @@ static void emit_validation_logic(FILE *f, AstNode *field, const char *prefix, c
                     prefix, fname, range->min->data.literal.value.int_val,
                     prefix, fname, range->max->data.literal.value.int_val, fname);
             } else {
-                fprintf(f, "    if (%s%s < %f || %s%s > %f) { cfg_set_error(err, \"value out of range\", \"%s\", 0); return false; }\n", 
+                fprintf(f, "    if (%s%s < %.17g || %s%s > %.17g) { cfg_set_error(err, \"value out of range\", \"%s\", 0); return false; }\n", 
                     prefix, fname, range->min->data.literal.value.float_val,
                     prefix, fname, range->max->data.literal.value.float_val, fname);
             }
@@ -93,13 +93,13 @@ static void emit_validation_logic(FILE *f, AstNode *field, const char *prefix, c
                     if (prop->value->data.literal.type == INT_LITERAL) {
                         fprintf(f, "    if (%s%s < %lld) { cfg_set_error(err, \"value too small\", \"%s\", 0); return false; }\n", prefix, fname, prop->value->data.literal.value.int_val, fname);
                     } else {
-                        fprintf(f, "    if (%s%s < %f) { cfg_set_error(err, \"value too small\", \"%s\", 0); return false; }\n", prefix, fname, prop->value->data.literal.value.float_val, fname);
+                        fprintf(f, "    if (%s%s < %.17g) { cfg_set_error(err, \"value too small\", \"%s\", 0); return false; }\n", prefix, fname, prop->value->data.literal.value.float_val, fname);
                     }
                 } else if (strcmp(pname, "max") == 0) {
                     if (prop->value->data.literal.type == INT_LITERAL) {
                         fprintf(f, "    if (%s%s > %lld) { cfg_set_error(err, \"value too large\", \"%s\", 0); return false; }\n", prefix, fname, prop->value->data.literal.value.int_val, fname);
                     } else {
-                        fprintf(f, "    if (%s%s > %f) { cfg_set_error(err, \"value too large\", \"%s\", 0); return false; }\n", prefix, fname, prop->value->data.literal.value.float_val, fname);
+                        fprintf(f, "    if (%s%s > %.17g) { cfg_set_error(err, \"value too large\", \"%s\", 0); return false; }\n", prefix, fname, prop->value->data.literal.value.float_val, fname);
                     }
                 }
          else if (strcmp(pname, "min_length") == 0) {

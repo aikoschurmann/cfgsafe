@@ -651,6 +651,28 @@ int main(int argc, char **argv) {
         printf("FAILED: Load failed. Error: %s, Field: %s\n", err.message, err.field);
     }
 
+    // Test 51: Small float defaults and bounds keep their precision
+    total_tests++;
+    printf("\nTest %d: Float Literal Precision...\n", total_tests);
+    {
+        const char *tiny_ok[] = { "program", "--EdgeCaseTest.tiny=0.00000015" };
+        const char *tiny_bad[] = { "program", "--EdgeCaseTest.tiny=0.00000025" };
+        bool ok = false;
+        if (EdgeCaseTest_load(&edge, "integration_edgecases.ini", 1, (const char**)argv, &err) == CFG_SUCCESS) {
+            ok = edge.tiny == 0.00000012;
+            EdgeCaseTest_free(&edge);
+        }
+        if (ok && EdgeCaseTest_load(&edge, "integration_edgecases.ini", 2, tiny_ok, &err) == CFG_SUCCESS) {
+            EdgeCaseTest_free(&edge);
+        } else ok = false;
+        if (ok && EdgeCaseTest_load(&edge, "integration_edgecases.ini", 2, tiny_bad, &err) == CFG_ERR_VALIDATION && strcmp(err.field, "tiny") == 0) {
+            printf("PASSED: Default exact; in-range value accepted, out-of-range rejected.\n");
+            tests_passed++;
+        } else {
+            printf("FAILED: Float precision lost (error: %s, field: %s)\n", err.message, err.field);
+        }
+    }
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 

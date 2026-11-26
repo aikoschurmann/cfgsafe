@@ -76,7 +76,7 @@ static void emit_print_recursive(CodegenContext *ctx, FILE *f, AstNode *node, co
                 } else if (strcmp(tname, "int") == 0) {
                     fprintf(f, "    fprintf(f, \"%%lld\\n\", (long long)%s%s);\n", prefix, fname);
                 } else if (strcmp(tname, "float") == 0) {
-                    fprintf(f, "    fprintf(f, \"%%f\\n\", %s%s);\n", prefix, fname);
+                    fprintf(f, "    fprintf(f, \"%%g\\n\", %s%s);\n", prefix, fname);
                 } else if (strcmp(tname, "bool") == 0) {
                     fprintf(f, "    fprintf(f, \"%%s\\n\", %s%s ? \"true\" : \"false\");\n", prefix, fname);
                 } else if (strcmp(tname, "string") == 0 || strcmp(tname, "path") == 0) {
@@ -104,7 +104,7 @@ static void emit_print_recursive(CodegenContext *ctx, FILE *f, AstNode *node, co
                     if (elem->data.ast_type.kind == AST_TYPE_PRIMITIVE) {
                         const char *elem_tname = get_str(elem->data.ast_type.u.primitive.name);
                         if (strcmp(elem_tname, "int") == 0) fprintf(f, "        fprintf(f, \"%%lld\", (long long)((int64_t*)%s%s.data)[i_%d]);\n", prefix, fname, depth);
-                        else if (strcmp(elem_tname, "float") == 0) fprintf(f, "        fprintf(f, \"%%f\", ((double*)%s%s.data)[i_%d]);\n", prefix, fname, depth);
+                        else if (strcmp(elem_tname, "float") == 0) fprintf(f, "        fprintf(f, \"%%g\", ((double*)%s%s.data)[i_%d]);\n", prefix, fname, depth);
                         else fprintf(f, "        fprintf(f, \"%%s\", ((const char**)%s%s.data)[i_%d]);\n", prefix, fname, depth);
                     } else {
                         fprintf(f, "        fprintf(f, \"%%s\", ((const char**)%s%s.data)[i_%d]);\n", prefix, fname, depth);
