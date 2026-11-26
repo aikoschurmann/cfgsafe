@@ -122,3 +122,16 @@ schema RequiredScalars {
     use_tls: bool { default: false }
     tls_port: int { required_if: use_tls == true }
 }
+
+schema Conditions {
+    mode: enum(BASIC, ADVANCED) { default: BASIC }
+    adv_key: string { required_if: mode == ADVANCED }
+    kind: string { default: "plain" }
+    kind_val: string { required_if: kind == "special" }
+    gw: ipv4 { default: "0.0.0.0" }
+    gw_name: string { required_if: gw == "10.0.0.1" }
+    section net {
+        proto: enum(TCP, UDP) { default: TCP }
+        udp_buf: int { required_if: proto == UDP }
+    }
+}

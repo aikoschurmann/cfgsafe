@@ -587,6 +587,35 @@ int main(int argc, char **argv) {
         }
     }
 
+    // Test 43-47: required_if conditions on enum, string, ipv4 and nested-section enum fields
+    {
+        static const struct { const char *name; const char *flag; const char *value; const char *field; } cond_cases[] = {
+            { "none triggered", NULL, NULL, NULL },
+            { "enum", "--Conditions.mode", "ADVANCED", "adv_key" },
+            { "string", "--Conditions.kind", "special", "kind_val" },
+            { "ipv4", "--Conditions.gw", "10.0.0.1", "gw_name" },
+            { "enum in section", "--Conditions.net.proto", "UDP", "udp_buf" },
+        };
+        for (size_t i = 0; i < sizeof(cond_cases) / sizeof(cond_cases[0]); i++) {
+            Conditions_t cond;
+            const char *cond_argv[] = { "program", cond_cases[i].flag, cond_cases[i].value };
+            int cond_argc = cond_cases[i].flag ? 3 : 1;
+            total_tests++;
+            printf("\nTest %d: required_if Condition (%s)...\n", total_tests, cond_cases[i].name);
+            cfg_status_t st = Conditions_load(&cond, "integration_empty.ini", cond_argc, cond_argv, &err);
+            if (!cond_cases[i].field) {
+                if (st == CFG_SUCCESS) { printf("PASSED: No condition triggered.\n"); tests_passed++; Conditions_free(&cond); }
+                else printf("FAILED: Error: %s, Field: %s\n", err.message, err.field);
+            } else if (st == CFG_ERR_VALIDATION && strcmp(err.field, cond_cases[i].field) == 0) {
+                printf("PASSED: %s (field: %s)\n", err.message, err.field);
+                tests_passed++;
+            } else {
+                if (st == CFG_SUCCESS) Conditions_free(&cond);
+                printf("FAILED: Expected '%s' to be required. Got status %d, field '%s'\n", cond_cases[i].field, (int)st, err.field);
+            }
+        }
+    }
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 

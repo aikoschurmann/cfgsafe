@@ -1,0 +1,4 @@
+schema S {
+    gw: ipv4 { default: "0.0.0.0" }
+    name: string { required_if: gw == "10.0.0" }
+}

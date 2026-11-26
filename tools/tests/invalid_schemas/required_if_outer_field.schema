@@ -1,0 +1,6 @@
+schema S {
+    debug: bool { default: false }
+    section log {
+        file: path { required_if: debug == true }
+    }
+}
