@@ -30,6 +30,9 @@ const char* get_str(InternResult *res);
 bool is_schema_name(CodegenContext *ctx, const char *name);
 AstNode* get_schema_by_name(CodegenContext *ctx, const char *name);
 const char* map_primitive_to_c(const char* name);
+/* Writes a string literal from the schema as a quoted, escaped C string literal.
+ * An empty or missing literal is written as "". */
+void emit_c_string(FILE *f, InternResult *literal);
 
 void track_usage(AstNode *node, UsageTracker *tracker);
 void emit_section_or_schema(CodegenContext *ctx, FILE *f, AstNode *node, const char* name);

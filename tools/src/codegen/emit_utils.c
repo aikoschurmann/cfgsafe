@@ -1,6 +1,33 @@
 #include <string.h>
 #include "codegen/codegen_common.h"
 
+void emit_c_string(FILE *f, InternResult *literal) {
+    const char *s = "";
+    size_t len = 0;
+    if (literal && literal->key && ((Slice*)literal->key)->ptr) {
+        s = ((Slice*)literal->key)->ptr;
+        len = ((Slice*)literal->key)->len;
+    }
+    fputc('"', f);
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)s[i];
+        switch (c) {
+            case '"':  fputs("\\\"", f); break;
+            case '\\': fputs("\\\\", f); break;
+            case '\n': fputs("\\n", f); break;
+            case '\t': fputs("\\t", f); break;
+            case '\r': fputs("\\r", f); break;
+            /* "??x" can form a trigraph in C99 */
+            case '?':  fputs((i > 0 && s[i - 1] == '?') ? "\\?" : "?", f); break;
+            default:
+                /* Octal escapes are at most 3 digits, so they cannot swallow following characters. */
+                if (c < 0x20 || c >= 0x7f) fprintf(f, "\\%03o", c);
+                else fputc(c, f);
+        }
+    }
+    fputc('"', f);
+}
+
 static bool is_field_secret(AstNode *field) {
     DynArray *props = field->data.field_decl.properties;
     if (!props) return false;

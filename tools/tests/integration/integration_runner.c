@@ -476,6 +476,21 @@ int main(int argc, char **argv) {
     tests_passed += expect_load_error("integration_unknown_array_section.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "TestSuite",
                                       "unknown array section [[TestSuite]]", 4);
 
+    // Test 36: String defaults containing quotes, backslashes, tabs and trigraph sequences
+    total_tests++;
+    printf("\nTest %d: Escaped String Defaults...\n", total_tests);
+    if (EdgeCaseTest_load(&edge, "integration_edgecases.ini", 1, (const char**)argv, &err) == CFG_SUCCESS) {
+        if (strcmp(edge.tricky_str, "say \"hi\" C:\\dir\ttab ?\?=") == 0 && strcmp(edge.empty_default, "") == 0) {
+            printf("PASSED: Defaults preserved exactly.\n");
+            tests_passed++;
+        } else {
+            printf("FAILED: Got tricky_str '%s', empty_default '%s'\n", edge.tricky_str, edge.empty_default);
+        }
+        EdgeCaseTest_free(&edge);
+    } else {
+        printf("FAILED: Load failed. Error: %s, Field: %s\n", err.message, err.field);
+    }
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 

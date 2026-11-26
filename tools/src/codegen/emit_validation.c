@@ -9,7 +9,7 @@ static void emit_condition_expression(FILE *f, AstNode *cond_node, const char *p
         case INT_LITERAL: fprintf(f, "%lld", rhs->data.literal.value.int_val); break;
         case FLOAT_LITERAL: fprintf(f, "%f", rhs->data.literal.value.float_val); break;
         case BOOL_LITERAL: fprintf(f, "%s", rhs->data.literal.value.bool_val ? "true" : "false"); break;
-        case STRING_LITERAL: fprintf(f, "\"%s\"", get_str(rhs->data.literal.value.string_val)); break;
+        case STRING_LITERAL: emit_c_string(f, rhs->data.literal.value.string_val); break;
         case IDENTIFIER_LITERAL: {
             fprintf(f, "%s", get_str(rhs->data.literal.value.string_val));
             break;
