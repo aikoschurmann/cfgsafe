@@ -136,3 +136,10 @@ schema Conditions {
         udp_buf: int { required_if: proto == UDP }
     }
 }
+
+// Arrays of structs nested inside a section: [[NestedArrays.deps.github]]
+schema NestedArrays {
+    section deps {
+        github: GithubSource[]
+    }
+}

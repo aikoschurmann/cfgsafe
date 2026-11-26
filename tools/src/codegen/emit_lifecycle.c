@@ -299,6 +299,7 @@ static void emit_cli_parser(CodegenContext *ctx, FILE *f, AstNode *schema, const
     fprintf(f, "static bool %s_parse_arg(cfg_common_context_t *ctx, int argc, const char **argv, int *index) {\n", schema_name);
     fprintf(f, "    int i = *index;\n");
     fprintf(f, "    const char *arg = argv[i];\n");
+    fprintf(f, "    (void)ctx; (void)argc; (void)arg; /* unused when the schema has no CLI options */\n");
     char prefix[256]; snprintf(prefix, sizeof(prefix), "((%s_t*)ctx->cfg)->", schema_name);
     emit_cli_parser_recursive(ctx, f, schema, prefix, schema_name, schema_name);
     fprintf(f, "    *index = i;\n");

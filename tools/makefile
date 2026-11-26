@@ -25,7 +25,7 @@ test: $(BIN)
 	@echo "--- Generating config header ---"
 	./$(BIN) -o $(TEST_HEADER) $(TEST_SCHEMA)
 	@echo "--- Compiling test runner ---"
-	$(CC) $(CFLAGS) -Iinclude -I$(TEST_DIR) $(TEST_DIR)/integration_runner.c -o $(TEST_RUNNER)
+	$(CC) $(CFLAGS) -Werror -Iinclude -I$(TEST_DIR) $(TEST_DIR)/integration_runner.c -o $(TEST_RUNNER)
 	@echo "--- Running integration tests ---"
 	cd $(TEST_DIR) && ../../$(TEST_RUNNER)
 	@echo "--- Checking header guard for a non-identifier filename ---"

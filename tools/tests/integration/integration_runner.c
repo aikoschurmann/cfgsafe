@@ -673,6 +673,29 @@ int main(int argc, char **argv) {
         }
     }
 
+    // Test 52: Arrays of structs inside a section
+    total_tests++;
+    printf("\nTest %d: Nested Arrays of Structs ([[Schema.section.field]])...\n", total_tests);
+    {
+        NestedArrays_t na;
+        if (NestedArrays_load(&na, "integration_nested_arrays.ini", 1, (const char**)argv, &err) == CFG_SUCCESS) {
+            if (na.deps.github.count == 2 &&
+                strcmp(na.deps.github.data[0].target, "nlohmann_json") == 0 &&
+                na.deps.github.data[0].options.count == 1 &&
+                strcmp(na.deps.github.data[1].url, "https://github.com/libuv/libuv") == 0 &&
+                na.deps.github.data[1].options.count == 2 &&
+                strcmp(na.deps.github.data[1].options.data[1], "ENABLE_EXAMPLES=OFF") == 0) {
+                printf("PASSED: Both nested entries loaded.\n");
+                tests_passed++;
+            } else {
+                printf("FAILED: Got %zu entries.\n", na.deps.github.count);
+            }
+            NestedArrays_free(&na);
+        } else {
+            printf("FAILED: Load failed. Error: %s, Field: %s, Line: %zu\n", err.message, err.field, err.line);
+        }
+    }
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 
