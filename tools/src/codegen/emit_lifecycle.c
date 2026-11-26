@@ -70,7 +70,7 @@ static void emit_default_initialization(FILE *f, AstNode *field, const char *pre
             fprintf(f, "    %s%s = ", prefix, fname);
             switch (default_node->data.literal.type) {
                 case INT_LITERAL: fprintf(f, "%lld;\n", default_node->data.literal.value.int_val); break;
-                case FLOAT_LITERAL: fprintf(f, "%f;\n", default_node->data.literal.value.float_val); break;
+                case FLOAT_LITERAL: fprintf(f, "%.17g;\n", default_node->data.literal.value.float_val); break;
                 case BOOL_LITERAL: fprintf(f, "%s;\n", default_node->data.literal.value.bool_val ? "true" : "false"); break;
                 case STRING_LITERAL:
                     fprintf(f, "cfg_intern_string(%s, ", ctx_name);
