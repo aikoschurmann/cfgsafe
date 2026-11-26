@@ -80,6 +80,8 @@ schema TestSuite {
 schema EdgeCaseTest {
     empty_str: string { default: "" }
     space_str: string { default: " " }
+    tricky_str: string { default: "say \"hi\" C:\\dir\ttab ??=" }
+    empty_default: string { default: "" }
     
     // Boolean stress
     flag_true: bool { default: false }
