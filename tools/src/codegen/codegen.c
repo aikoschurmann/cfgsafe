@@ -129,65 +129,6 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
     fprintf(f, "    return copy;\n");
     fprintf(f, "}\n\n");
 
-    fprintf(f, "static void cfg_parse_array_string(cfg_common_context_t *ctx, const char *val, void **data, size_t *count) {\n");
-    fprintf(f, "    char *val_copy = (char*)malloc(strlen(val) + 1);\n");
-    fprintf(f, "    if (!val_copy) return;\n");
-    fprintf(f, "    strcpy(val_copy, val);\n");
-    fprintf(f, "    char *s = val_copy;\n");
-    fprintf(f, "    char *token = cfg_next_token(&s, \",\");\n");
-    fprintf(f, "    size_t n = 0;\n");
-    fprintf(f, "    while (token) { n++; token = cfg_next_token(&s, \",\"); }\n");
-    fprintf(f, "    free(val_copy);\n");
-    fprintf(f, "    *count = n;\n");
-    fprintf(f, "    if (n == 0) { *data = NULL; return; }\n");
-    fprintf(f, "    *data = cfg_pool_alloc(&ctx->pool, n * sizeof(const char*));\n");
-    fprintf(f, "    val_copy = (char*)malloc(strlen(val) + 1);\n");
-    fprintf(f, "    if (!val_copy) return;\n");
-    fprintf(f, "    strcpy(val_copy, val);\n");
-    fprintf(f, "    s = val_copy;\n");
-    fprintf(f, "    token = cfg_next_token(&s, \",\");\n");
-    fprintf(f, "    for (size_t i = 0; i < n; i++) {\n");
-    fprintf(f, "        while(isspace(*token)) token++;\n");
-    fprintf(f, "        char *elem = token;\n");
-    fprintf(f, "        if (*elem == '\\\"') {\n");
-    fprintf(f, "            elem++;\n");
-    fprintf(f, "            char *v_end = strrchr(elem, '\\\"');\n");
-    fprintf(f, "            if (v_end) *v_end = '\\0';\n");
-    fprintf(f, "        } else {\n");
-    fprintf(f, "            char *v_end = elem + strlen(elem) - 1;\n");
-    fprintf(f, "            while(v_end > elem && isspace(*v_end)) *v_end-- = '\\0';\n");
-    fprintf(f, "        }\n");
-    fprintf(f, "        ((const char**)*data)[i] = cfg_intern_string(ctx, elem);\n");
-    fprintf(f, "        token = cfg_next_token(&s, \",\");\n");
-    fprintf(f, "    }\n");
-
-    fprintf(f, "    free(val_copy);\n");
-    fprintf(f, "}\n\n");
-
-    fprintf(f, "static void cfg_parse_array_int(cfg_common_context_t *ctx, const char *val, void **data, size_t *count) {\n");
-    fprintf(f, "    char *val_copy = (char*)malloc(strlen(val) + 1);\n");
-    fprintf(f, "    if (!val_copy) return;\n");
-    fprintf(f, "    strcpy(val_copy, val);\n");
-    fprintf(f, "    char *s = val_copy;\n");
-    fprintf(f, "    char *token = cfg_next_token(&s, \",\");\n");
-    fprintf(f, "    size_t n = 0;\n");
-    fprintf(f, "    while (token) { n++; token = cfg_next_token(&s, \",\"); }\n");
-    fprintf(f, "    free(val_copy);\n");
-    fprintf(f, "    *count = n;\n");
-    fprintf(f, "    if (n == 0) { *data = NULL; return; }\n");
-    fprintf(f, "    *data = cfg_pool_alloc(&ctx->pool, n * sizeof(int64_t));\n");
-    fprintf(f, "    val_copy = (char*)malloc(strlen(val) + 1);\n");
-    fprintf(f, "    if (!val_copy) return;\n");
-    fprintf(f, "    strcpy(val_copy, val);\n");
-    fprintf(f, "    s = val_copy;\n");
-    fprintf(f, "    token = cfg_next_token(&s, \",\");\n");
-    fprintf(f, "    for (size_t i = 0; i < n; i++) {\n");
-    fprintf(f, "        ((int64_t*)*data)[i] = strtoll(token, NULL, 10);\n");
-    fprintf(f, "        token = cfg_next_token(&s, \",\");\n");
-    fprintf(f, "    }\n");
-    fprintf(f, "    free(val_copy);\n");
-    fprintf(f, "}\n\n");
-
     if (tracker->uses_ipv4) {
         fputs(
             "static bool cfg_parse_ipv4(const char *s, cfg_ipv4_t *out) {\n"
@@ -208,6 +149,58 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
             "}\n\n", f);
     }
 
+
+    if (tracker->uses_array) {
+        fputs(
+            "/* Returns the next comma-separated item, trimmed and with surrounding quotes removed. */\n"
+            "static char* cfg_next_item(char **cursor) {\n"
+            "    char *tok = cfg_next_token(cursor, \",\");\n"
+            "    if (!tok) return NULL;\n"
+            "    while (isspace((unsigned char)*tok)) tok++;\n"
+            "    char *end = tok + strlen(tok);\n"
+            "    while (end > tok && isspace((unsigned char)end[-1])) *--end = '\\0';\n"
+            "    if (*tok == '\"' && end - tok >= 2 && end[-1] == '\"') { end[-1] = '\\0'; tok++; }\n"
+            "    return tok;\n"
+            "}\n\n"
+            "typedef bool (*cfg_elem_parser)(cfg_common_context_t *ctx, const char *s, void *out);\n\n"
+            "static void cfg_parse_array(cfg_common_context_t *ctx, const char *val, void **data, size_t *count,\n"
+            "                            size_t elem_size, cfg_elem_parser parse, const char *kind,\n"
+            "                            const char *field, const char *origin) {\n"
+            "    size_t len = strlen(val) + 1, n = 0;\n"
+            "    char *buf = (char*)malloc(len), *cursor, *item;\n"
+            "    *data = NULL;\n"
+            "    *count = 0;\n"
+            "    if (!buf) { cfg_fail(ctx, CFG_ERR_VALIDATION, \"out of memory\", field); return; }\n"
+            "    memcpy(buf, val, len);\n"
+            "    cursor = buf;\n"
+            "    while (cfg_next_item(&cursor)) n++;\n"
+            "    if (n > 0) {\n"
+            "        *data = cfg_pool_alloc(&ctx->pool, n * elem_size);\n"
+            "        if (!*data) { free(buf); cfg_fail(ctx, CFG_ERR_VALIDATION, \"out of memory\", field); return; }\n"
+            "        memcpy(buf, val, len);\n"
+            "        cursor = buf;\n"
+            "        for (size_t i = 0; (item = cfg_next_item(&cursor)) != NULL; i++) {\n"
+            "            if (!parse(ctx, item, (char*)*data + i * elem_size)) {\n"
+            "                cfg_fail_value(ctx, kind, field, item, origin);\n"
+            "                break;\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "    *count = n;\n"
+            "    free(buf);\n"
+            "}\n\n", f);
+    }
+    if (tracker->uses_array_int)
+        fputs("static bool cfg_elem_int(cfg_common_context_t *ctx, const char *s, void *out) { (void)ctx; return cfg_parse_int(s, (int64_t*)out); }\n", f);
+    if (tracker->uses_array_float)
+        fputs("static bool cfg_elem_float(cfg_common_context_t *ctx, const char *s, void *out) { (void)ctx; return cfg_parse_float(s, (double*)out); }\n", f);
+    if (tracker->uses_array_bool)
+        fputs("static bool cfg_elem_bool(cfg_common_context_t *ctx, const char *s, void *out) { (void)ctx; return cfg_parse_bool(s, (bool*)out); }\n", f);
+    if (tracker->uses_array_ipv4)
+        fputs("static bool cfg_elem_ipv4(cfg_common_context_t *ctx, const char *s, void *out) { (void)ctx; return cfg_parse_ipv4(s, (cfg_ipv4_t*)out); }\n", f);
+    if (tracker->uses_array_string)
+        fputs("static bool cfg_elem_string(cfg_common_context_t *ctx, const char *s, void *out) { const char *c = cfg_intern_string(ctx, s); *(const char**)out = c; return c != NULL; }\n", f);
+    if (tracker->uses_array) fputs("\n", f);
 
     fprintf(f, "typedef void (*cfg_ini_cb)(cfg_common_context_t *ctx, const char *sec, const char *key, const char *val);\n");
     fprintf(f, "static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, cfg_common_context_t *ctx) {\n");

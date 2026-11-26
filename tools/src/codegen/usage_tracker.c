@@ -87,6 +87,16 @@ void track_usage(AstNode *node, UsageTracker *tracker) {
                 else if (strcmp(name, "ipv4") == 0) tracker->uses_ipv4 = true;
             } else if (type->kind == AST_TYPE_ARRAY) {
                 tracker->uses_size_t = true;
+                AstType *elem = &type->u.array.elem->data.ast_type;
+                const char *ename = (elem->kind == AST_TYPE_PRIMITIVE) ? get_str(elem->u.primitive.name) : NULL;
+                bool is_struct = false;
+                if (ename && strcmp(ename, "int") == 0) tracker->uses_array_int = true;
+                else if (ename && strcmp(ename, "float") == 0) tracker->uses_array_float = true;
+                else if (ename && strcmp(ename, "bool") == 0) tracker->uses_array_bool = true;
+                else if (ename && strcmp(ename, "ipv4") == 0) tracker->uses_array_ipv4 = true;
+                else if (ename && strcmp(ename, "string") != 0 && strcmp(ename, "path") != 0) is_struct = true;
+                else tracker->uses_array_string = true;
+                if (!is_struct) tracker->uses_array = true;
                 track_usage(type->u.array.elem, tracker);
             }
             break;

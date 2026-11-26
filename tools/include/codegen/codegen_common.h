@@ -15,6 +15,12 @@ typedef struct {
     bool uses_strlen;
     bool uses_access;
     bool uses_getenv;
+    bool uses_array;        /* any non-struct array */
+    bool uses_array_int;
+    bool uses_array_float;
+    bool uses_array_bool;
+    bool uses_array_ipv4;
+    bool uses_array_string; /* string, path and any other element type */
     DynArray *regex_patterns; /* char* */
 } UsageTracker;
 
@@ -39,6 +45,10 @@ void emit_regex_validator(FILE *f, const char *re_str, int idx);
  * lvalue `lhs`. On failure the generated code records an error through
  * `ctx_expr` (a cfg_common_context_t*). `origin` is a C expression naming the
  * value's source for the message, e.g. "\"env PORT\"", or "NULL". */
+/* Emits parsing of the comma-separated list `val` into the array lvalue `lhs`
+ * (a { T *data; size_t count; } struct) using the element type's parser. */
+void emit_array_parse(FILE *f, const char *indent, AstNode *elem_type, const char *lhs,
+                      const char *val, const char *field, const char *ctx_expr, const char *origin);
 void emit_scalar_parse(FILE *f, const char *indent, const char *tname, const char *lhs,
                        const char *val, const char *field, const char *ctx_expr, const char *origin);
 

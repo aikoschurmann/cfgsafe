@@ -96,6 +96,10 @@ schema EdgeCaseTest {
         min_length: 2
     }
 
+    float_array: float[]
+    bool_array: bool[]
+    ip_array: ipv4[]
+
     sources: GithubSource[]
 
     // Cross reference

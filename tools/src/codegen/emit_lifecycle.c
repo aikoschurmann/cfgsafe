@@ -1,6 +1,21 @@
 #include <string.h>
 #include "codegen/codegen_common.h"
 
+void emit_array_parse(FILE *f, const char *indent, AstNode *elem_type, const char *lhs,
+                      const char *val, const char *field, const char *ctx_expr, const char *origin) {
+    const char *fn = "cfg_elem_string", *kind = "string";
+    AstType *elem = &elem_type->data.ast_type;
+    if (elem->kind == AST_TYPE_PRIMITIVE) {
+        const char *ename = get_str(elem->u.primitive.name);
+        if (strcmp(ename, "int") == 0) { fn = "cfg_elem_int"; kind = "integer"; }
+        else if (strcmp(ename, "float") == 0) { fn = "cfg_elem_float"; kind = "float"; }
+        else if (strcmp(ename, "bool") == 0) { fn = "cfg_elem_bool"; kind = "boolean"; }
+        else if (strcmp(ename, "ipv4") == 0) { fn = "cfg_elem_ipv4"; kind = "IPv4"; }
+    }
+    fprintf(f, "%scfg_parse_array(%s, %s, (void**)&%s.data, &%s.count, sizeof(*%s.data), %s, \"%s\", \"%s\", %s);\n",
+            indent, ctx_expr, val, lhs, lhs, lhs, fn, kind, field, origin);
+}
+
 void emit_scalar_parse(FILE *f, const char *indent, const char *tname, const char *lhs,
                        const char *val, const char *field, const char *ctx_expr, const char *origin) {
     const char *fn = NULL, *kind = NULL;
@@ -180,18 +195,13 @@ static void emit_ini_handler_body(CodegenContext *ctx, FILE *f, AstNode *node, c
                 }
             } else if (type->kind == AST_TYPE_ARRAY) {
                 AstNode *elem = type->u.array.elem;
-                if (elem->data.ast_type.kind == AST_TYPE_PRIMITIVE) {
-                    const char *elem_tname = get_str(elem->data.ast_type.u.primitive.name);
-                    if (strcmp(elem_tname, "int") == 0) {
-                        emit_indent(f, target_depth + 3); fprintf(f, "cfg_parse_array_int(ctx, val, (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
-                    } else if (strcmp(elem_tname, "string") == 0 || strcmp(elem_tname, "path") == 0) {
-                        emit_indent(f, target_depth + 3); fprintf(f, "cfg_parse_array_string(ctx, val, (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
-                    } else if (!is_schema_name(ctx, elem_tname)) {
-                        // Fallback or other types...
-                        emit_indent(f, target_depth + 3); fprintf(f, "cfg_parse_array_string(ctx, val, (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
-                    }
-                } else {
-                    emit_indent(f, target_depth + 3); fprintf(f, "cfg_parse_array_string(ctx, val, (void**)&%s%s.data, &%s%s.count);\n", prefix, fname, prefix, fname);
+                bool is_struct_array = elem->data.ast_type.kind == AST_TYPE_PRIMITIVE &&
+                                       is_schema_name(ctx, get_str(elem->data.ast_type.u.primitive.name));
+                if (!is_struct_array) {
+                    char lhs[512];
+                    snprintf(lhs, sizeof(lhs), "%s%s", prefix, fname);
+                    emit_indent(f, target_depth + 3);
+                    emit_array_parse(f, "", elem, lhs, "val", fname, "ctx", "NULL");
                 }
             }
             emit_indent(f, target_depth + 3); fprintf(f, "return;\n");
