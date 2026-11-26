@@ -102,7 +102,7 @@ host = "127.0.0.1" # This is also an inline comment
 
 Values are parsed strictly: a value that is not a complete, valid literal of the field's type (for example `80abc` for an `int`, `yes` for a `bool`, or `1.2.3.4.5` for an `ipv4`) makes loading fail with `CFG_ERR_VALIDATION`, naming the field and line. The same rules apply to values from environment variables and the command line.
 
-Keys that do not correspond to a schema field, inside any section that belongs to the schema (for example a misspelled `prot = 80` under `[Config.db]`), also fail the load with `CFG_ERR_VALIDATION`. Sections belonging to other schemas, and keys before the first section header, are ignored. To accept unknown keys (and unknown `--Schema.` command-line options), define `CFG_ALLOW_UNKNOWN_KEYS` before including the implementation:
+Keys that do not correspond to a schema field, inside any section that belongs to the schema (for example a misspelled `prot = 80` under `[Config.db]`), also fail the load with `CFG_ERR_VALIDATION`. Sections belonging to other schemas are ignored, so one file can hold several schemas. Keys before the first section header belong to no schema and are reported as unknown. To accept unknown keys (and unknown `--Schema.` command-line options), define `CFG_ALLOW_UNKNOWN_KEYS` before including the implementation:
 
 ```c
 #define CFG_ALLOW_UNKNOWN_KEYS

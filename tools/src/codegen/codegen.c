@@ -670,6 +670,14 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "    while(token && num_parts < 32) { parts[num_parts++] = token; token = cfg_next_token(&s, \".\"); }\n");
         fprintf(f, "    if (token) { cfg_fail(ctx, CFG_ERR_SYNTAX, CFG_KIND_SYNTAX, \"section is nested too deeply (limit 32 levels)\", NULL); return; }\n\n");
 
+        fprintf(f, "#ifndef CFG_ALLOW_UNKNOWN_KEYS\n");
+        fprintf(f, "    if (key && num_parts == 0) {\n");
+        fprintf(f, "        char msg[512];\n");
+        fprintf(f, "        snprintf(msg, sizeof(msg), \"key '%%.200s' is outside any section (put it under [%s])\", key);\n", schema_name);
+        fprintf(f, "        cfg_fail(ctx, CFG_ERR_VALIDATION, CFG_KIND_UNKNOWN_KEY, msg, key);\n");
+        fprintf(f, "        return;\n");
+        fprintf(f, "    }\n");
+        fprintf(f, "#endif\n");
         fprintf(f, "    if (num_parts == 0 || strcmp(parts[0], \"%s\") != 0) return;\n", schema_name);
         fprintf(f, "    for (int i = 0; i < num_parts - 1; i++) parts[i] = parts[i+1];\n");
         fprintf(f, "    num_parts--;\n");

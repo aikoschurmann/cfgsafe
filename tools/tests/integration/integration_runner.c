@@ -953,6 +953,12 @@ int main(int argc, char **argv) {
         }
     }
 
+    // Test 71: Key before the first section header
+    total_tests++;
+    printf("\nTest %d: Key Outside Any Section...\n", total_tests);
+    tests_passed += expect_load_error("integration_key_outside_section.ini", 1, (const char**)argv, CFG_ERR_VALIDATION, "project_name",
+                                      "key 'project_name' is outside any section (put it under [TestSuite])", 1);
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 
