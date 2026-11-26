@@ -197,6 +197,24 @@ static const char *check_regex_syntax(const char *re) {
     return NULL;
 }
 
+/* A hook name is emitted as a function call, so it must be a C identifier. */
+static bool is_valid_c_identifier(const char *s) {
+    static const char *const keywords[] = {
+        "auto", "break", "case", "char", "const", "continue", "default", "do", "double", "else",
+        "enum", "extern", "float", "for", "goto", "if", "inline", "int", "long", "register",
+        "restrict", "return", "short", "signed", "sizeof", "static", "struct", "switch", "typedef",
+        "union", "unsigned", "void", "volatile", "while", "_Bool", "_Complex", "_Imaginary",
+    };
+    if (!s || !(isalpha((unsigned char)*s) || *s == '_')) return false;
+    for (const char *p = s; *p; p++) {
+        if (!isalnum((unsigned char)*p) && *p != '_') return false;
+    }
+    for (size_t i = 0; i < sizeof(keywords) / sizeof(keywords[0]); i++) {
+        if (strcmp(s, keywords[i]) == 0) return false;
+    }
+    return true;
+}
+
 static bool check_enum_member(Arena *arena, Type *field_type, AstNode *literal, char **out_err) {
     if (field_type->kind != TYPE_ENUM) return true;
     if (literal->data.literal.type != IDENTIFIER_LITERAL) return false;
@@ -273,6 +291,14 @@ static bool check_value_matches(Arena *arena, DynArray *errors, const char *file
                         report_type_error(arena, errors, TE_INVALID_FORMAT, value_node->span, filename, NULL, NULL, msg);
                         return true; /* already reported */
                     }
+                }
+                if (strcmp(prop_name, "hook") == 0 && !is_valid_c_identifier(s)) {
+                    *out_err = "hook must be the name of a C function (a valid C identifier)";
+                    return false;
+                }
+                if (strcmp(prop_name, "short") == 0 && !(isalnum((unsigned char)s[0]) && s[1] == '\0')) {
+                    *out_err = "short flag must be a single letter or digit";
+                    return false;
                 }
                 if (strcmp(prop_name, "env") == 0) {
                     if (!is_valid_env_name(s)) {

@@ -1,0 +1,3 @@
+schema S {
+    a: string { hook: "int" }
+}
