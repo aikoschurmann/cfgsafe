@@ -211,6 +211,99 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
         fputs("static bool cfg_elem_string(cfg_common_context_t *ctx, const char *s, void *out) { const char *c = cfg_intern_string(ctx, s); *(const char**)out = c; return c != NULL; }\n", f);
     if (tracker->uses_array) fputs("\n", f);
 
+    if (tracker->regex_patterns->count > 0) {
+        fputs(
+            "/* Backtracking matcher for the pattern subset accepted by cfg-gen:\n"
+            " * ^ $ . [set] [^set] \\d \\w \\s (and \\D \\W \\S), \\<char>, and the\n"
+            " * quantifiers * + ? {n} {n,} {n,m}. Patterns are checked at generation time. */\n"
+            "static bool cfg_re_escape_match(char e, unsigned char c) {\n"
+            "    switch (e) {\n"
+            "        case 'd': return isdigit(c) != 0;\n"
+            "        case 'D': return isdigit(c) == 0;\n"
+            "        case 'w': return isalnum(c) != 0 || c == '_';\n"
+            "        case 'W': return !(isalnum(c) != 0 || c == '_');\n"
+            "        case 's': return isspace(c) != 0;\n"
+            "        case 'S': return isspace(c) == 0;\n"
+            "        default:  return (unsigned char)e == c;\n"
+            "    }\n"
+            "}\n\n"
+            "static const char *cfg_re_atom_end(const char *re) {\n"
+            "    if (*re == '\\\\') return re[1] ? re + 2 : re + 1;\n"
+            "    if (*re == '[') {\n"
+            "        const char *p = re + 1;\n"
+            "        if (*p == '^') p++;\n"
+            "        if (*p == ']') p++; /* a leading ] is literal */\n"
+            "        while (*p && *p != ']') { if (*p == '\\\\' && p[1]) p++; p++; }\n"
+            "        return *p ? p + 1 : p;\n"
+            "    }\n"
+            "    return re + 1;\n"
+            "}\n\n"
+            "static bool cfg_re_atom_match(const char *atom, unsigned char c) {\n"
+            "    if (*atom == '.') return true;\n"
+            "    if (*atom == '\\\\') return cfg_re_escape_match(atom[1], c);\n"
+            "    if (*atom == '[') {\n"
+            "        const char *p = atom + 1;\n"
+            "        bool negate = false, found = false, first = true;\n"
+            "        if (*p == '^') { negate = true; p++; }\n"
+            "        while (*p && (*p != ']' || first)) {\n"
+            "            first = false;\n"
+            "            if (*p == '\\\\' && p[1]) {\n"
+            "                if (cfg_re_escape_match(p[1], c)) found = true;\n"
+            "                p += 2;\n"
+            "            } else if (p[1] == '-' && p[2] && p[2] != ']') {\n"
+            "                if (c >= (unsigned char)p[0] && c <= (unsigned char)p[2]) found = true;\n"
+            "                p += 3;\n"
+            "            } else {\n"
+            "                if ((unsigned char)*p == c) found = true;\n"
+            "                p++;\n"
+            "            }\n"
+            "        }\n"
+            "        return found != negate;\n"
+            "    }\n"
+            "    return (unsigned char)*atom == c;\n"
+            "}\n\n"
+            "static const char *cfg_re_quantifier(const char *q, size_t *min, size_t *max) {\n"
+            "    *min = 1; *max = 1;\n"
+            "    if (*q == '*') { *min = 0; *max = (size_t)-1; return q + 1; }\n"
+            "    if (*q == '+') { *max = (size_t)-1; return q + 1; }\n"
+            "    if (*q == '?') { *min = 0; return q + 1; }\n"
+            "    if (*q == '{') {\n"
+            "        const char *p = q + 1;\n"
+            "        size_t lo = 0, hi;\n"
+            "        while (isdigit((unsigned char)*p)) lo = lo * 10 + (size_t)(*p++ - '0');\n"
+            "        hi = lo;\n"
+            "        if (*p == ',') {\n"
+            "            p++;\n"
+            "            if (isdigit((unsigned char)*p)) { hi = 0; while (isdigit((unsigned char)*p)) hi = hi * 10 + (size_t)(*p++ - '0'); }\n"
+            "            else hi = (size_t)-1;\n"
+            "        }\n"
+            "        *min = lo; *max = hi;\n"
+            "        return p + 1; /* skip '}' */\n"
+            "    }\n"
+            "    return q;\n"
+            "}\n\n"
+            "static bool cfg_re_match_here(const char *re, const char *s) {\n"
+            "    const char *rest;\n"
+            "    size_t min, max, n = 0;\n"
+            "    if (*re == '\\0') return true;\n"
+            "    if (re[0] == '$' && re[1] == '\\0') return *s == '\\0';\n"
+            "    rest = cfg_re_quantifier(cfg_re_atom_end(re), &min, &max);\n"
+            "    while (n < max && s[n] != '\\0' && cfg_re_atom_match(re, (unsigned char)s[n])) n++;\n"
+            "    if (n < min) return false;\n"
+            "    for (;;) { /* greedy, then backtrack one character at a time */\n"
+            "        if (cfg_re_match_here(rest, s + n)) return true;\n"
+            "        if (n == min) return false;\n"
+            "        n--;\n"
+            "    }\n"
+            "}\n\n"
+            "static bool cfg_regex_match(const char *re, const char *s) {\n"
+            "    if (!s) return false;\n"
+            "    if (*re == '^') return cfg_re_match_here(re + 1, s);\n"
+            "    do { if (cfg_re_match_here(re, s)) return true; } while (*s++ != '\\0');\n"
+            "    return false;\n"
+            "}\n\n", f);
+    }
+
     fprintf(f, "typedef void (*cfg_ini_cb)(cfg_common_context_t *ctx, const char *sec, const char *key, const char *val);\n");
     fprintf(f, "static cfg_status_t cfg_parse_ini(const char *filename, cfg_ini_cb cb, cfg_common_context_t *ctx) {\n");
     fprintf(f, "    FILE *f = fopen(filename, \"r\"); if (!f) { cfg_fail(ctx, CFG_ERR_OPEN_FILE, \"failed to open file\", filename); return ctx->status; }\n");
@@ -387,9 +480,6 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
 
     emit_boilerplate_runtime(ctx, f, &tracker);
 
-    for (size_t i = 0; i < tracker.regex_patterns->count; i++) {
-        emit_regex_validator(f, *(char**)dynarray_get(tracker.regex_patterns, i), (int)i);
-    }
 
     for (size_t i = 0; i < prog->schemas->count; i++) {
         AstNode *schema = *(AstNode**)dynarray_get(prog->schemas, i);

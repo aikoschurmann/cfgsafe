@@ -491,6 +491,38 @@ int main(int argc, char **argv) {
         printf("FAILED: Load failed. Error: %s, Field: %s\n", err.message, err.field);
     }
 
+    // Test 37: Regex matcher semantics
+    total_tests++;
+    printf("\nTest %d: Regex Matcher...\n", total_tests);
+    {
+        static const struct { const char *re, *s; bool want; } cases[] = {
+            { "^[A-Za-z0-9]{4}$", "aB3x", true },  { "^[A-Za-z0-9]{4}$", "aB3", false },
+            { "^#[0-9A-Fa-f]{6}$", "#FF5733", true }, { "^#[0-9A-Fa-f]{6}$", "FF5733", false },
+            { "^[^@]+@[^@]+\\.[^@]+$", "user@example.com", true }, { "^[^@]+@[^@]+\\.[^@]+$", "a@b", false },
+            { "^[0-9]+\\.[0-9]+\\.[0-9]+$", "1.22.3", true }, { "^[0-9]+\\.[0-9]+\\.[0-9]+$", "1.2", false },
+            { "^.*foo$", "barfoo", true }, { "^.*foo$", "foo", true }, { "^.*foo$", "foob", false },
+            { "^ab?c$", "ac", true }, { "^ab?c$", "abc", true }, { "^ab?c$", "abbc", false },
+            { "^a*$", "", true }, { "^a*$", "aaa", true }, { "^a*$", "b", false },
+            { "colou?r", "my color", true }, { "colou?r", "colr", false },
+            { "^\\d{2,4}$", "12", true }, { "^\\d{2,4}$", "12345", false }, { "^\\d{2,4}$", "1", false },
+            { "^x{2,}$", "xxxx", true }, { "^x{2,}$", "x", false },
+            { "^[]a]+$", "]a]", true }, { "^[a-]$", "-", true },
+            { "^a.c$", "abc", true }, { "^a.c$", "ac", false },
+            { "^\\w+\\s\\w+$", "hello world", true }, { "^\\w+\\s\\w+$", "hello  world", false },
+            { "^$", "", true }, { "^$", "a", false }, { "\\$", "cost $5", true },
+            { "^\\(a\\|b\\)$", "(a|b)", true },
+        };
+        int bad = 0;
+        for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+            if (cfg_regex_match(cases[i].re, cases[i].s) != cases[i].want) {
+                printf("  mismatch: /%s/ on \"%s\" should be %s\n", cases[i].re, cases[i].s, cases[i].want ? "true" : "false");
+                bad++;
+            }
+        }
+        if (bad == 0) { printf("PASSED: All %zu regex cases behave as expected.\n", sizeof(cases) / sizeof(cases[0])); tests_passed++; }
+        else printf("FAILED: %d regex cases wrong.\n", bad);
+    }
+
     printf("\n--- Test Results Summary ---\n");
     printf("%d / %d tests passed.\n", tests_passed, total_tests);
 
