@@ -65,7 +65,19 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
         "    const char *path; /* dotted section path of the INI key being parsed, or NULL */\n"
         "    cfg_line_entry_t *lines; /* where each field was last set, for validation errors */\n"
         "    size_t nlines, lines_cap;\n"
+        "    cfg_error_cb on_error;   /* if set, receives every error (Name_load_report) */\n"
+        "    void *user;\n"
+        "    size_t nerrors;\n"
         "} cfg_common_context_t;\n\n"
+        "static inline bool cfg_collecting(const cfg_common_context_t *ctx) { return ctx && ctx->on_error; }\n\n"
+        "/* Delivers one error: the first goes to *err (and decides the status), and\n"
+        " * every one goes to the on_error callback if there is one. */\n"
+        "static void cfg_deliver(cfg_common_context_t *ctx, cfg_error_t *err, const cfg_error_t *e) {\n"
+        "    bool first = !ctx || ctx->nerrors == 0;\n"
+        "    if (ctx) ctx->nerrors++;\n"
+        "    if (first && err) *err = *e;\n"
+        "    if (cfg_collecting(ctx)) ctx->on_error(e, ctx->user);\n"
+        "}\n\n"
         "/* Line tracking is best effort: on allocation failure lines are reported as 0. */\n"
         "static inline void cfg_note_line(cfg_common_context_t *ctx, const void *addr) {\n"
         "    if (ctx->nlines == ctx->lines_cap) {\n"
@@ -92,27 +104,42 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
         "        if (a >= lo && a < hi) ctx->lines[i].addr = (const char*)new_base + (a - lo);\n"
         "    }\n"
         "}\n\n"
-        "/* Records the first error only; later errors are usually consequences of it. */\n"
+        "/* Reports a parse-time error; the first one sets the load status. */\n"
         "static void cfg_fail(cfg_common_context_t *ctx, cfg_status_t status, cfg_error_kind_t kind, const char *msg, const char *field) {\n"
-        "    if (ctx->status != CFG_SUCCESS) return;\n"
-        "    ctx->status = status;\n"
-        "    cfg_set_error(ctx->err, msg, field, ctx->line);\n"
-        "    if (ctx->err) ctx->err->kind = kind;\n"
+        "    cfg_error_t e;\n"
+        "    memset(&e, 0, sizeof(e));\n"
+        "    cfg_set_error(&e, msg, field, ctx->line);\n"
+        "    e.kind = kind;\n"
+        "    if (ctx->status == CFG_SUCCESS) ctx->status = status;\n"
+        "    cfg_deliver(ctx, ctx->err, &e);\n"
         "}\n\n"
         , f);
 
     fputs(
+        "/* Builds \"path.name\" or \"path.name[index]\" (index < 0: no index). */\n"
+        "static inline void cfg_join_path(char *buf, size_t n, const char *path, const char *name, long index) {\n"
+        "    const char *dot = (path && path[0]) ? \".\" : \"\";\n"
+        "    if (index >= 0) snprintf(buf, n, \"%s%s%s[%ld]\", path ? path : \"\", dot, name, index);\n"
+        "    else snprintf(buf, n, \"%s%s%s\", path ? path : \"\", dot, name);\n"
+        "}\n\n"
+        "/* Reports a validation failure on path.field. Returns true if validation\n"
+        " * should stop, i.e. unless every error is being collected. */\n"
         "#if defined(__GNUC__)\n"
-        "__attribute__((format(printf, 4, 5)))\n"
+        "__attribute__((format(printf, 7, 8)))\n"
         "#endif\n"
-        "static inline void cfg_set_errorf(cfg_error_t *err, const char *field, size_t line, const char *fmt, ...) {\n"
-        "    char msg[sizeof(err->message)];\n"
+        "static inline bool cfg_report(cfg_error_t *err, cfg_common_context_t *lctx, const char *path, const char *field,\n"
+        "                              size_t line, cfg_error_kind_t kind, const char *fmt, ...) {\n"
+        "    cfg_error_t e;\n"
         "    va_list ap;\n"
-        "    if (!err) return;\n"
+        "    memset(&e, 0, sizeof(e));\n"
         "    va_start(ap, fmt);\n"
-        "    vsnprintf(msg, sizeof(msg), fmt, ap);\n"
+        "    vsnprintf(e.message, sizeof(e.message), fmt, ap);\n"
         "    va_end(ap);\n"
-        "    cfg_set_error(err, msg, field, line);\n"
+        "    cfg_join_path(e.field, sizeof(e.field), path, field, -1);\n"
+        "    e.line = line;\n"
+        "    e.kind = kind;\n"
+        "    cfg_deliver(lctx, err, &e);\n"
+        "    return !cfg_collecting(lctx);\n"
         "}\n\n"
         "/* Qualifies an INI field name with the current section path, e.g. \"db.port\". */\n"
         "static const char *cfg_field_path(const cfg_common_context_t *ctx, const char *field, char *buf, size_t n) {\n"
@@ -120,15 +147,7 @@ static void emit_boilerplate_runtime(CodegenContext *ctx, FILE *f, UsageTracker 
         "    snprintf(buf, n, \"%.120s.%.120s\", ctx->path, field);\n"
         "    return buf;\n"
         "}\n\n"
-        "/* Adds an enclosing field (and array index, if >= 0) to err->field while a\n"
-        " * nested validation failure unwinds: \"port\" becomes \"db.port\". */\n"
-        "static inline void cfg_prefix_field(cfg_error_t *err, const char *name, long index) {\n"
-        "    char buf[sizeof(err->field)];\n"
-        "    if (!err) return;\n"
-        "    if (index >= 0) snprintf(buf, sizeof(buf), err->field[0] ? \"%s[%ld].%s\" : \"%s[%ld]\", name, index, err->field);\n"
-        "    else snprintf(buf, sizeof(buf), err->field[0] ? \"%s.%s\" : \"%s\", name, err->field);\n"
-        "    memcpy(err->field, buf, sizeof(buf));\n"
-        "}\n\n"
+
         "/* `val` is NULL for secret fields, whose values must not appear in messages. */\n"
         "static void cfg_fail_value(cfg_common_context_t *ctx, const char *kind, const char *field, const char *val, const char *origin) {\n"
         "    char msg[512], shown[220];\n"
@@ -510,7 +529,9 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         "    char field[256];\n"
         "    size_t line;\n"
         "    cfg_error_kind_t kind;\n"
-        "} cfg_error_t;\n\n", f);
+        "} cfg_error_t;\n\n"
+        "/* Receives each error found by Name_load_report(). `error` is only valid during the call. */\n"
+        "typedef void (*cfg_error_cb)(const cfg_error_t *error, void *user);\n\n", f);
 
     fprintf(f, "static inline void cfg_set_error(cfg_error_t *err, const char *msg, const char *field, size_t line) {\n");
     fprintf(f, "    if (!err) return;\n");
@@ -552,6 +573,8 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         AstNode *schema = *(AstNode**)dynarray_get(prog->schemas, i);
         const char* schema_name = get_str(schema->data.schema_decl.name);
         fprintf(f, "cfg_status_t %s_load(%s_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err);\n", schema_name, schema_name);
+        fprintf(f, "cfg_status_t %s_load_report(%s_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err,\n", schema_name, schema_name);
+        fprintf(f, "                            cfg_error_cb on_error, void *user);\n");
         fprintf(f, "void %s_parse_cli(%s_t *cfg, int argc, const char **argv);\n", schema_name, schema_name);
         fprintf(f, "void %s_print(const %s_t *cfg, FILE *f);\n", schema_name, schema_name);
         fprintf(f, "void %s_free(%s_t *cfg);\n", schema_name, schema_name);
@@ -590,7 +613,7 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         emit_validation_ctx_prototypes(f, schema, get_str(schema->data.schema_decl.name));
     }
     fprintf(f, "\n/* Used by the validators: report a failure on cfg->FIELD with the line that set it. */\n");
-    fprintf(f, "#define CFG_FAIL_KIND(k, field, ...) do { cfg_set_errorf(err, #field, cfg_line_of(lctx, &cfg->field), __VA_ARGS__); if (err) err->kind = (k); return false; } while (0)\n");
+    fprintf(f, "#define CFG_FAIL_KIND(k, field, ...) do { if (cfg_report(err, lctx, path, #field, cfg_line_of(lctx, &cfg->field), (k), __VA_ARGS__)) return false; ok = false; } while (0)\n");
     fprintf(f, "#define CFG_FAILF(field, ...) CFG_FAIL_KIND(CFG_KIND_CONSTRAINT, field, __VA_ARGS__)\n");
     fprintf(f, "#define CFG_MISSING(field, ...) CFG_FAIL_KIND(CFG_KIND_MISSING, field, __VA_ARGS__)\n\n");
 
@@ -628,32 +651,39 @@ bool codegen_generate_header(CodegenContext *ctx, const char *output_filename) {
         fprintf(f, "}\n\n");
 
         fprintf(f, "cfg_status_t %s_load(%s_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err) {\n", schema_name, schema_name);
+        fprintf(f, "    return %s_load_report(cfg, filename, argc, argv, err, NULL, NULL);\n", schema_name);
+        fprintf(f, "}\n\n");
+
+        fprintf(f, "/* Like Name_load, but passes every error to on_error (if not NULL), not just the\n");
+        fprintf(f, " * first. Parse errors from all sources are reported together; validation runs\n");
+        fprintf(f, " * only if parsing succeeded, to avoid knock-on errors. */\n");
+        fprintf(f, "cfg_status_t %s_load_report(%s_t *cfg, const char *filename, int argc, const char **argv, cfg_error_t *err,\n", schema_name, schema_name);
+        fprintf(f, "                            cfg_error_cb on_error, void *user) {\n");
         fprintf(f, "    if (!cfg) return CFG_ERR_VALIDATION;\n");
         fprintf(f, "    memset(cfg, 0, sizeof(%s_t));\n", schema_name);
-        fprintf(f, "    cfg_common_context_t ctx = { cfg, NULL, err, 0, CFG_SUCCESS, NULL, NULL, 0, 0 };\n");
+        fprintf(f, "    cfg_common_context_t ctx = { cfg, NULL, err, 0, CFG_SUCCESS, NULL, NULL, 0, 0, on_error, user, 0 };\n");
         fprintf(f, "    if (err) memset(err, 0, sizeof(cfg_error_t));\n");
         
         emit_default_initialization_recursive(ctx, f, schema, "cfg->", "&ctx");
 
-        fprintf(f, "    if (filename && cfg_parse_ini(filename, %s_ini_handler, &ctx) != CFG_SUCCESS) {\n", schema_name);
-        fprintf(f, "        cfg_pool_free(ctx.pool);\n");
-        fprintf(f, "        free(ctx.lines);\n");
-        fprintf(f, "        memset(cfg, 0, sizeof(%s_t));\n", schema_name);
-        fprintf(f, "        return ctx.status;\n");
-        fprintf(f, "    }\n");
+        fprintf(f, "    if (filename) cfg_parse_ini(filename, %s_ini_handler, &ctx);\n", schema_name);
+        fprintf(f, "    if (ctx.status != CFG_SUCCESS && !on_error) goto fail;\n");
         fprintf(f, "    ctx.line = 0;\n");
         fprintf(f, "    ctx.path = NULL;\n");
 
         emit_env_overrides_recursive(ctx, &tracker, f, schema, "cfg->", "&ctx");
 
         fprintf(f, "    %s_parse_cli_ctx(&ctx, argc, argv);\n", schema_name);
+        fprintf(f, "    if (ctx.status != CFG_SUCCESS) goto fail;\n");
         fprintf(f, "    cfg->internal_pool = ctx.pool;\n");
-        fprintf(f, "    if (ctx.status != CFG_SUCCESS) { free(ctx.lines); %s_free(cfg); return ctx.status; }\n", schema_name);
-
-        fprintf(f, "    bool valid = %s_validate_ctx(cfg, err, &ctx);\n", schema_name);
+        fprintf(f, "    if (!%s_validate_ctx(cfg, err, &ctx, \"\")) { ctx.status = CFG_ERR_VALIDATION; goto fail; }\n", schema_name);
         fprintf(f, "    free(ctx.lines);\n");
-        fprintf(f, "    if (!valid) { %s_free(cfg); return CFG_ERR_VALIDATION; }\n", schema_name);
         fprintf(f, "    return CFG_SUCCESS;\n");
+        fprintf(f, "fail:\n");
+        fprintf(f, "    cfg->internal_pool = ctx.pool;\n");
+        fprintf(f, "    free(ctx.lines);\n");
+        fprintf(f, "    %s_free(cfg);\n", schema_name);
+        fprintf(f, "    return ctx.status;\n");
         fprintf(f, "}\n\n");
 
         fprintf(f, "void %s_free(%s_t *cfg) {\n", schema_name, schema_name);

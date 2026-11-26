@@ -6,6 +6,14 @@
 
 #define ANY_LINE ((size_t)-1)
 
+/* Collects errors passed to a Name_load_report() callback. */
+typedef struct { cfg_error_t errors[16]; int count; } error_list_t;
+static void collect_error(const cfg_error_t *e, void *user) {
+    error_list_t *list = (error_list_t*)user;
+    if (list->count < 16) list->errors[list->count] = *e;
+    list->count++;
+}
+
 /* Loads `ini` into a TestSuite and checks that it fails with the given status,
  * field, message fragment and (unless ANY_LINE) line number. */
 static int expect_load_error(const char *ini, int argc, const char **argv, cfg_status_t want,
@@ -849,6 +857,51 @@ int main(int argc, char **argv) {
         }
         if (ok == n + 2) { printf("PASSED: All %d kinds correct.\n", ok); tests_passed++; }
         else printf("FAILED: %d of %d kinds correct.\n", ok, n + 2);
+    }
+
+    // Test 64-65: Name_load_report() passes every error to the callback
+    {
+        static const struct { const char *field, *msg; size_t line; cfg_error_kind_t kind; } parse_expect[] = {
+            { "version", "invalid integer value 'ten'", 3, CFG_KIND_INVALID_VALUE },
+            { "verison", "unknown key 'verison'", 4, CFG_KIND_UNKNOWN_KEY },
+            { "global_level", "invalid value 'LOUD'", 5, CFG_KIND_INVALID_VALUE },
+            { "level1.factor", "invalid float value 'x'", 8, CFG_KIND_INVALID_VALUE },
+            { "--TestSuite.nope", "unknown option '--TestSuite.nope'", 0, CFG_KIND_UNKNOWN_KEY },
+        };
+        static const struct { const char *field, *msg; size_t line; cfg_error_kind_t kind; } check_expect[] = {
+            { "project_name", "string is 2 characters long", 2, CFG_KIND_CONSTRAINT },
+            { "version", "value 500 is out of range 1..100", 3, CFG_KIND_CONSTRAINT },
+            { "level1.factor", "value 1.5 is above the maximum 1", 6, CFG_KIND_CONSTRAINT },
+            { "level1.level2.level3.level4.tags", "rejected by hook 'test_array_hook'", 9, CFG_KIND_HOOK },
+        };
+        const char *nope_argv[] = { "program", "--TestSuite.nope" };
+
+        for (int stage = 0; stage < 2; stage++) {
+            error_list_t list;
+            memset(&list, 0, sizeof(list));
+            total_tests++;
+            printf("\nTest %d: Report All %s Errors...\n", total_tests, stage == 0 ? "Parse" : "Validation");
+            cfg_status_t st = stage == 0
+                ? TestSuite_load_report(&cfg, "integration_many_parse_errors.ini", 2, nope_argv, &err, collect_error, &list)
+                : TestSuite_load_report(&cfg, "integration_many_constraint_errors.ini", 1, (const char**)argv, &err, collect_error, &list);
+            int want = stage == 0 ? 5 : 4, ok = (st == CFG_ERR_VALIDATION && list.count == want);
+            for (int i = 0; ok && i < want; i++) {
+                const char *field = stage == 0 ? parse_expect[i].field : check_expect[i].field;
+                const char *msg = stage == 0 ? parse_expect[i].msg : check_expect[i].msg;
+                size_t line = stage == 0 ? parse_expect[i].line : check_expect[i].line;
+                cfg_error_kind_t kind = stage == 0 ? parse_expect[i].kind : check_expect[i].kind;
+                if (strcmp(list.errors[i].field, field) != 0 || !strstr(list.errors[i].message, msg) ||
+                    list.errors[i].line != line || list.errors[i].kind != kind) ok = 0;
+            }
+            // err holds the first error, as with Name_load
+            if (ok && (strcmp(err.field, list.errors[0].field) != 0 || err.line != list.errors[0].line)) ok = 0;
+            if (ok) { printf("PASSED: All %d errors reported in order.\n", want); tests_passed++; }
+            else {
+                printf("FAILED: status %d, %d errors:\n", (int)st, list.count);
+                for (int i = 0; i < list.count && i < 16; i++)
+                    printf("  %s:%zu kind %d: %s\n", list.errors[i].field, list.errors[i].line, (int)list.errors[i].kind, list.errors[i].message);
+            }
+        }
     }
 
     printf("\n--- Test Results Summary ---\n");

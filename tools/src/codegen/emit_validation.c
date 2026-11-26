@@ -182,12 +182,17 @@ static void emit_validation_logic(FILE *f, AstNode *field, const char *prefix, c
                           (strcmp(get_str(type->u.primitive.name), "string") == 0 || 
                            strcmp(get_str(type->u.primitive.name), "path") == 0));
             
-            /* A hook may set its own message; fill in whatever it left empty. */
-            fprintf(f, "    if (!%s(%s%s, err)) {\n", hook_name, is_str ? "" : "&", v);
-            fprintf(f, "        if (err && !err->field[0]) cfg_set_error(err, err->message[0] ? NULL : \"rejected by hook '%s'\", \"%s\", 0);\n", hook_name, fname);
-            fprintf(f, "        if (err && !err->line) err->line = cfg_line_of(lctx, &%s);\n", v);
-            fprintf(f, "        if (err) err->kind = CFG_KIND_HOOK;\n");
-            fprintf(f, "        return false;\n");
+            /* Hooks fill in a scratch error, so they can't overwrite earlier errors;
+             * whatever they leave empty is filled in here. */
+            fprintf(f, "    {\n");
+            fprintf(f, "        cfg_error_t herr;\n");
+            fprintf(f, "        memset(&herr, 0, sizeof(herr));\n");
+            fprintf(f, "        if (!%s(%s%s, &herr)) {\n", hook_name, is_str ? "" : "&", v);
+            fprintf(f, "            if (!herr.message[0]) snprintf(herr.message, sizeof(herr.message), \"rejected by hook '%s'\");\n", hook_name);
+            fprintf(f, "            if (cfg_report(err, lctx, path, herr.field[0] ? herr.field : \"%s\", herr.line ? herr.line : cfg_line_of(lctx, &%s),\n", fname, v);
+            fprintf(f, "                           CFG_KIND_HOOK, \"%%s\", herr.message)) return false;\n");
+            fprintf(f, "            ok = false;\n");
+            fprintf(f, "        }\n");
             fprintf(f, "    }\n");
         }
     }
@@ -200,9 +205,10 @@ void emit_validation_function(UsageTracker *tracker, CodegenContext *ctx, FILE *
 
     /* The _ctx variant can look up the INI line that set each field; lctx is
      * NULL when called through the public Name_validate(). */
-    fprintf(f, "static bool %s_validate_ctx(const %s_t *cfg, cfg_error_t *err, const cfg_common_context_t *lctx) {\n", name, name);
+    fprintf(f, "static bool %s_validate_ctx(const %s_t *cfg, cfg_error_t *err, cfg_common_context_t *lctx, const char *path) {\n", name, name);
+    fprintf(f, "    bool ok = true;\n");
     fprintf(f, "    if (!cfg) return false;\n");
-    fprintf(f, "    (void)err; (void)lctx;\n");
+    fprintf(f, "    (void)err; (void)lctx; (void)path;\n");
     
     for (size_t i = 0; i < items->count; i++) {
         AstNode *item = *(AstNode**)dynarray_get(items, i);
@@ -212,8 +218,9 @@ void emit_validation_function(UsageTracker *tracker, CodegenContext *ctx, FILE *
             if (type_node->node_type == AST_TYPE && type_node->data.ast_type.kind == AST_TYPE_PRIMITIVE) {
                 const char *tname = get_str(type_node->data.ast_type.u.primitive.name);
                 if (is_schema_name(ctx, tname)) {
-                    fprintf(f, "    if (!%s_validate_ctx(&cfg->%s, err, lctx)) { cfg_prefix_field(err, \"%s\", -1); return false; }\n",
-                            tname, get_str(item->data.field_decl.name), get_str(item->data.field_decl.name));
+                    const char *n = get_str(item->data.field_decl.name);
+                    fprintf(f, "    { char sub[256]; cfg_join_path(sub, sizeof(sub), path, \"%s\", -1);\n", n);
+                    fprintf(f, "      if (!%s_validate_ctx(&cfg->%s, err, lctx, sub)) { if (!cfg_collecting(lctx)) return false; ok = false; } }\n", tname, n);
                 }
             } else if (type_node->node_type == AST_TYPE && type_node->data.ast_type.kind == AST_TYPE_ARRAY) {
                 AstNode *elem = type_node->data.ast_type.u.array.elem;
@@ -221,19 +228,21 @@ void emit_validation_function(UsageTracker *tracker, CodegenContext *ctx, FILE *
                     const char *elem_tname = get_str(elem->data.ast_type.u.primitive.name);
                     if (is_schema_name(ctx, elem_tname)) {
                         fprintf(f, "    for (size_t i = 0; i < cfg->%s.count; i++) {\n", get_str(item->data.field_decl.name));
-                        fprintf(f, "        if (!%s_validate_ctx(&cfg->%s.data[i], err, lctx)) { cfg_prefix_field(err, \"%s\", (long)i); return false; }\n",
-                                elem_tname, get_str(item->data.field_decl.name), get_str(item->data.field_decl.name));
+                        const char *n = get_str(item->data.field_decl.name);
+                        fprintf(f, "        char sub[256]; cfg_join_path(sub, sizeof(sub), path, \"%s\", (long)i);\n", n);
+                        fprintf(f, "        if (!%s_validate_ctx(&cfg->%s.data[i], err, lctx, sub)) { if (!cfg_collecting(lctx)) return false; ok = false; }\n", elem_tname, n);
                         fprintf(f, "    }\n");
                     }
                 }
             }
         } else if (item->node_type == AST_SECTION_DECL) {
-            fprintf(f, "    if (!%s_validate_ctx(&cfg->%s, err, lctx)) { cfg_prefix_field(err, \"%s\", -1); return false; }\n",
-                    get_str(item->data.section_decl.name), get_str(item->data.section_decl.name), get_str(item->data.section_decl.name));
+            const char *n = get_str(item->data.section_decl.name);
+            fprintf(f, "    { char sub[256]; cfg_join_path(sub, sizeof(sub), path, \"%s\", -1);\n", n);
+            fprintf(f, "      if (!%s_validate_ctx(&cfg->%s, err, lctx, sub)) { if (!cfg_collecting(lctx)) return false; ok = false; } }\n", n, n);
         }
     }
-    fprintf(f, "    return true;\n}\n\n");
-    fprintf(f, "bool %s_validate(const %s_t *cfg, cfg_error_t *err) { return %s_validate_ctx(cfg, err, NULL); }\n\n", name, name, name);
+    fprintf(f, "    return ok;\n}\n\n");
+    fprintf(f, "bool %s_validate(const %s_t *cfg, cfg_error_t *err) { return %s_validate_ctx(cfg, err, NULL, \"\"); }\n\n", name, name, name);
 
     for (size_t i = 0; i < items->count; i++) {
         AstNode *item = *(AstNode**)dynarray_get(items, i);
@@ -262,7 +271,7 @@ void emit_validation_ctx_prototypes(FILE *f, AstNode *node, const char *name) {
         ? node->data.schema_decl.items
         : node->data.section_decl.items;
 
-    fprintf(f, "static bool %s_validate_ctx(const %s_t *cfg, cfg_error_t *err, const cfg_common_context_t *lctx);\n", name, name);
+    fprintf(f, "static bool %s_validate_ctx(const %s_t *cfg, cfg_error_t *err, cfg_common_context_t *lctx, const char *path);\n", name, name);
     for (size_t i = 0; i < items->count; i++) {
         AstNode *item = *(AstNode**)dynarray_get(items, i);
         if (item->node_type == AST_SECTION_DECL) {

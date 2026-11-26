@@ -93,6 +93,25 @@ cfg_status_t Name_load(
 - `argc/argv`: Passed directly from `main`. Use `0, NULL` to skip CLI parsing.
 - **Returns**: `CFG_SUCCESS` on success, or an error code.
 
+### `Name_load_report`
+Same as `Name_load`, but reports **every** error, not just the first, by calling `on_error` once per error. `err` (if not `NULL`) still receives the first error, and the return value is the same as `Name_load` would give.
+```c
+typedef void (*cfg_error_cb)(const cfg_error_t *error, void *user);
+
+cfg_status_t Name_load_report(Name_t *cfg, const char *filename, int argc, const char **argv,
+                              cfg_error_t *err, cfg_error_cb on_error, void *user);
+```
+Parse errors from the INI file, environment and command line are all reported together. Validation (constraints and hooks) runs only if parsing succeeded, so a bad value isn't reported a second time as, say, out of range.
+
+```c
+static void print_error(const cfg_error_t *e, void *user) {
+    (void)user;
+    fprintf(stderr, "config.ini:%zu: %s: %s\n", e->line, e->field, e->message);
+}
+
+if (Config_load_report(&cfg, "config.ini", argc, argv, NULL, print_error, NULL) != CFG_SUCCESS) return 1;
+```
+
 ### `Name_free`
 Releases all memory held by the config instance.
 ```c
@@ -135,16 +154,14 @@ bool hook_name(const void *val, cfg_error_t *err);
 - **Strings/Paths**: `val` is `const char*`.
 - **Primitives**: `val` is a pointer to the type (e.g., `int64_t*`).
 - **Arrays**: `val` is a pointer to the array struct.
+- **`err`**: an empty error to describe the problem in. Setting `message` is enough: the field's full path, its INI line and `kind = CFG_KIND_HOOK` are filled in for you. If you leave `message` empty, it becomes `rejected by hook '<name>'`.
 
 **Example**:
 ```c
 bool validate_port(const void *val, cfg_error_t *err) {
     int64_t port = *(int64_t*)val;
     if (port == 80) {
-        if (err) {
-            strcpy(err->message, "Port 80 is reserved");
-            strcpy(err->field, "port");
-        }
+        snprintf(err->message, sizeof(err->message), "port 80 is reserved");
         return false;
     }
     return true;
@@ -173,7 +190,7 @@ bool validate_port(const void *val, cfg_error_t *err) {
 - `CFG_ERR_SYNTAX`: Syntax error in the INI file.
 - `CFG_ERR_VALIDATION`: A value could not be parsed as its field's type, or a built-in constraint or custom hook failed.
 
-Only the first error is reported.
+`Name_load` reports only the first error; use `Name_load_report` to get all of them.
 
 `field` is relative to the struct being loaded or validated, without the schema name: `level1.level2.bind_addr`, `sources[1].target`. For an unknown command-line option it is the option name. `line` is set for parse errors and, when loading with `Name_load`, for validation errors too: it is the line that last assigned the failing field. It is 0 when the value came from a default, the environment or the command line, when the field is missing, and when calling `Name_validate` directly.
 

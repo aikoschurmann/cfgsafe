@@ -326,7 +326,7 @@ static void emit_cli_parser(CodegenContext *ctx, FILE *f, AstNode *schema, const
 
     fprintf(f, "void %s_parse_cli(%s_t *cfg, int argc, const char **argv) {\n", schema_name, schema_name);
     fprintf(f, "    if (!cfg) return;\n");
-    fprintf(f, "    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool, NULL, 0, CFG_SUCCESS, NULL, NULL, 0, 0 };\n");
+    fprintf(f, "    cfg_common_context_t ctx = { cfg, (cfg_pool_node_t*)cfg->internal_pool, NULL, 0, CFG_SUCCESS, NULL, NULL, 0, 0, NULL, NULL, 0 };\n");
     fprintf(f, "    %s_parse_cli_ctx(&ctx, argc, argv);\n", schema_name);
     fprintf(f, "    free(ctx.lines);\n");
     fprintf(f, "    cfg->internal_pool = ctx.pool;\n");
